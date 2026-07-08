@@ -145,13 +145,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {mode === "login" ? (
-            <div className="mt-4 rounded-xl border border-dashed border-border bg-card/50 p-4 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">{t("auth.demoHint")}</p>
-              <p className="mt-1.5">admin@onde.studio · admin123</p>
-              <p>client@example.com · client123</p>
-            </div>
-          ) : null}
+
         </div>
       </div>
     </div>
