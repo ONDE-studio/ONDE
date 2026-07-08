@@ -18,16 +18,24 @@ export default function CheckoutPage() {
   const { cart, cartTotal, currentUser, createOrder } = useStore()
   const router = useRouter()
 
-  const [method, setMethod] = useState<OrderMethod>("telegram") // Default to telegram
+  const [method, setMethod] = useState<OrderMethod>("telegram")
   const [name, setName] = useState(currentUser?.name ?? "")
   const [address, setAddress] = useState("")
-  const [deliveryPayment, setDeliveryPayment] = useState("")
+  const [deliveryMethod, setDeliveryMethod] = useState("cdek")
   const [agreement, setAgreement] = useState(false)
   const [contact, setContact] = useState(currentUser?.email ?? "")
   const [comment, setComment] = useState("")
   const [done, setDone] = useState(false)
 
-  const canSubmit = cart.length > 0 && name.trim() && address.trim() && deliveryPayment.trim() && agreement
+  const DELIVERY_FEE = 350
+  const FREE_DELIVERY_THRESHOLD = 3500
+
+  const needsDeliveryFee = cartTotal > 0 && cartTotal < FREE_DELIVERY_THRESHOLD
+  const deliveryCost = needsDeliveryFee ? DELIVERY_FEE : 0
+  const remainingForFreeDelivery = FREE_DELIVERY_THRESHOLD - cartTotal
+  const finalTotal = cartTotal + deliveryCost
+
+  const canSubmit = cart.length > 0 && name.trim() && address.trim() && agreement
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -37,8 +45,9 @@ export default function CheckoutPage() {
       .join("\n")
     createOrder({ method, customerName: name.trim(), contact: contact.trim() || "-", comment: comment.trim() })
     if (method === "telegram") {
+      const deliveryName = deliveryMethod === "cdek" ? "СДЭК" : deliveryMethod === "post" ? "Почта России" : "Яндекс.Доставка"
       const text = encodeURIComponent(
-        `Здравствуйте! я хочу купить:\n${summary}\n\nмой адресс: ${address}\nдоставку хочу оплатить через: ${deliveryPayment}\nс соглашением о покупке соглашаюсь(соглашение добавим потом)`
+        `Здравствуйте! Я хочу оформить заказ:\n\n${summary}\n\nСумма товаров: ${cartTotal} ₽\nДоставка (${deliveryName}): ${deliveryCost} ₽\nИтого к оплате: ${finalTotal} ₽\n\nМой адрес: ${address}\n\nС Пользовательским соглашением ознакомлен(а) и согласен(на).`
       )
       window.open(`https://t.me/${TELEGRAM_USERNAME}?text=${text}`, "_blank")
     }
@@ -163,14 +172,16 @@ export default function CheckoutPage() {
                   />
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-foreground">{t("checkout.deliveryPayment")}</span>
-                  <input
-                    value={deliveryPayment}
-                    onChange={(e) => setDeliveryPayment(e.target.value)}
-                    required
-                    placeholder="Например: СДЭК, оплата при получении"
+                  <span className="text-sm font-medium text-foreground">Служба доставки</span>
+                  <select
+                    value={deliveryMethod}
+                    onChange={(e) => setDeliveryMethod(e.target.value)}
                     className="h-11 rounded-lg border border-border bg-card px-3.5 text-sm outline-none transition-colors focus:border-foreground focus:ring-1 focus:ring-foreground"
-                  />
+                  >
+                    <option value="cdek">СДЭК (до пункта выдачи)</option>
+                    <option value="post">Почта России</option>
+                    <option value="yandex">Яндекс.Доставка (курьер)</option>
+                  </select>
                 </label>
                 <label className="flex items-center gap-3 py-2 cursor-pointer">
                   <input
@@ -178,9 +189,15 @@ export default function CheckoutPage() {
                     checked={agreement}
                     onChange={(e) => setAgreement(e.target.checked)}
                     required
-                    className="size-5 rounded border-border accent-foreground cursor-pointer"
+                    className="size-5 rounded border-border accent-foreground cursor-pointer shrink-0"
                   />
-                  <span className="text-sm text-foreground">{t("checkout.agreement")}</span>
+                  <span className="text-sm text-foreground">
+                    Я соглашаюсь с{" "}
+                    <Link href="/terms" target="_blank" className="underline underline-offset-4 hover:text-muted-foreground">
+                      пользовательским соглашением
+                    </Link>
+                    , правилами доставки и возврата
+                  </span>
                 </label>
               </div>
 
@@ -222,12 +239,38 @@ export default function CheckoutPage() {
                   </li>
                 ))}
               </ul>
-              <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
-                <span className="text-sm text-muted-foreground">{t("cart.total")}</span>
-                <span className="font-serif text-xl text-foreground">
-                  {formatPrice(cartTotal)}
-                </span>
+              <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Товары</span>
+                  <span className="font-medium text-foreground">{formatPrice(cartTotal)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Доставка</span>
+                  <span className="font-medium text-foreground">
+                    {deliveryCost === 0 ? "Бесплатно" : formatPrice(deliveryCost)}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center justify-between border-t border-border pt-3">
+                  <span className="text-sm font-medium text-foreground">{t("cart.total")}</span>
+                  <span className="font-serif text-xl text-foreground">
+                    {formatPrice(finalTotal)}
+                  </span>
+                </div>
               </div>
+
+              {needsDeliveryFee && (
+                <div className="mt-6 rounded-xl border border-primary/20 bg-primary/5 p-4 text-center">
+                  <p className="text-sm font-medium text-primary">
+                    До бесплатной доставки осталось {formatPrice(remainingForFreeDelivery)}!
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Добавьте еще что-нибудь в корзину, чтобы сэкономить {formatPrice(DELIVERY_FEE)} на доставке.
+                  </p>
+                  <Button asChild variant="link" className="mt-2 h-auto p-0 text-xs">
+                    <Link href="/#catalog">Вернуться в каталог &rarr;</Link>
+                  </Button>
+                </div>
+              )}
             </aside>
           </div>
         )}
