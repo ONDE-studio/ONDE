@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS products (
   image text,
   category text,
   position integer not null default 0,
+  featured boolean default false,
   "createdAt" timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
