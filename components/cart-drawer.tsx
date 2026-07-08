@@ -15,6 +15,10 @@ export function CartDrawer() {
   const { cart, setQuantity, removeFromCart, cartTotal } = useStore()
   const { open, setOpen } = useCartUI()
 
+  const FREE_DELIVERY_THRESHOLD = 3500
+  const progressPercent = Math.min((cartTotal / FREE_DELIVERY_THRESHOLD) * 100, 100)
+  const remainingForFreeDelivery = FREE_DELIVERY_THRESHOLD - cartTotal
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false)
@@ -141,6 +145,24 @@ export function CartDrawer() {
             </div>
 
             <div className="border-t border-border px-5 py-4">
+              <div className="mb-4">
+                <div className="mb-1.5 flex justify-between text-xs font-medium">
+                  {cartTotal >= FREE_DELIVERY_THRESHOLD ? (
+                    <span className="text-primary">Доставка по Москве и МО бесплатная!</span>
+                  ) : (
+                    <span className="text-foreground">
+                      До бесплатной доставки по Москве и МО: <span className="font-bold">{formatPrice(remainingForFreeDelivery)}</span>
+                    </span>
+                  )}
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full bg-primary transition-all duration-500 ease-out"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">{t("cart.total")}</span>
                 <span className="font-serif text-xl text-foreground">{formatPrice(cartTotal)}</span>

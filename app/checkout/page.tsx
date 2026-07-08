@@ -30,8 +30,11 @@ export default function CheckoutPage() {
   const DELIVERY_FEE = 350
   const FREE_DELIVERY_THRESHOLD = 3500
 
-  const needsDeliveryFee = cartTotal > 0 && cartTotal < FREE_DELIVERY_THRESHOLD
-  const deliveryCost = needsDeliveryFee ? DELIVERY_FEE : 0
+  const isMoscowRegion = deliveryMethod === "cdek" || deliveryMethod === "yandex"
+  const needsDeliveryFee = isMoscowRegion
+    ? cartTotal > 0 && cartTotal < FREE_DELIVERY_THRESHOLD
+    : true // Regions always pay delivery
+  const deliveryCost = needsDeliveryFee ? (deliveryMethod === "post" ? 400 : deliveryMethod === "cdek_regions" ? 500 : DELIVERY_FEE) : 0
   const remainingForFreeDelivery = FREE_DELIVERY_THRESHOLD - cartTotal
   const finalTotal = cartTotal + deliveryCost
 
@@ -45,7 +48,14 @@ export default function CheckoutPage() {
       .join("\n")
     createOrder({ method, customerName: name.trim(), contact: contact.trim() || "-", comment: comment.trim() })
     if (method === "telegram") {
-      const deliveryName = deliveryMethod === "cdek" ? "СДЭК" : deliveryMethod === "post" ? "Почта России" : "Яндекс.Доставка"
+      const deliveryName =
+        deliveryMethod === "cdek"
+          ? "СДЭК (Москва и МО)"
+          : deliveryMethod === "yandex"
+          ? "Яндекс.Доставка"
+          : deliveryMethod === "cdek_regions"
+          ? "СДЭК (Регионы)"
+          : "Почта России"
       const text = encodeURIComponent(
         `Здравствуйте! Я хочу оформить заказ:\n\n${summary}\n\nСумма товаров: ${cartTotal} ₽\nДоставка (${deliveryName}): ${deliveryCost} ₽\nИтого к оплате: ${finalTotal} ₽\n\nМой адрес: ${address}\n\nС Пользовательским соглашением ознакомлен(а) и согласен(на).`
       )
@@ -178,9 +188,10 @@ export default function CheckoutPage() {
                     onChange={(e) => setDeliveryMethod(e.target.value)}
                     className="h-11 rounded-lg border border-border bg-card px-3.5 text-sm outline-none transition-colors focus:border-foreground focus:ring-1 focus:ring-foreground"
                   >
-                    <option value="cdek">СДЭК (до пункта выдачи)</option>
-                    <option value="post">Почта России</option>
-                    <option value="yandex">Яндекс.Доставка (курьер)</option>
+                    <option value="cdek">СДЭК (Москва и МО)</option>
+                    <option value="yandex">Яндекс.Доставка (Москва и МО)</option>
+                    <option value="cdek_regions">СДЭК (Регионы РФ)</option>
+                    <option value="post">Почта России (Регионы РФ)</option>
                   </select>
                 </label>
                 <label className="flex items-center gap-3 py-2 cursor-pointer">
@@ -258,10 +269,10 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {needsDeliveryFee && (
+              {isMoscowRegion && needsDeliveryFee && (
                 <div className="mt-6 rounded-xl border border-primary/20 bg-primary/5 p-4 text-center">
                   <p className="text-sm font-medium text-primary">
-                    До бесплатной доставки осталось {formatPrice(remainingForFreeDelivery)}!
+                    До бесплатной доставки по Москве и МО осталось {formatPrice(remainingForFreeDelivery)}!
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Добавьте еще что-нибудь в корзину, чтобы сэкономить {formatPrice(DELIVERY_FEE)} на доставке.
