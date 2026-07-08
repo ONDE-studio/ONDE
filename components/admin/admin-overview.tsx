@@ -21,11 +21,11 @@ const MONTHS_RU = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "
 const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 export function AdminOverview() {
-  const { orders, products } = useStore()
+  const { orders, products, updateOrderStatus } = useStore()
   const { t, formatPrice, formatDate, locale } = useI18n()
 
   const stats = useMemo(() => {
-    const paidOrders = orders.filter((o) => o.status !== "cancelled")
+    const paidOrders = orders.filter((o) => o.status === "done")
     const revenue = paidOrders.reduce((n, o) => n + o.total, 0)
     const avg = paidOrders.length ? Math.round(revenue / paidOrders.length) : 0
     return {
@@ -40,7 +40,7 @@ export function AdminOverview() {
     const months = locale === "ru" ? MONTHS_RU : MONTHS_EN
     const map = new Map<string, number>()
     for (const o of orders) {
-      if (o.status === "cancelled") continue
+      if (o.status !== "done") continue
       const d = new Date(o.createdAt)
       const key = `${d.getFullYear()}-${d.getMonth()}`
       map.set(key, (map.get(key) ?? 0) + o.total)
@@ -196,7 +196,16 @@ export function AdminOverview() {
                 <span className="text-sm text-muted-foreground">{o.customerName}</span>
               </div>
               <div className="flex items-center gap-4">
-                <StatusBadge status={o.status} />
+                <select
+                  value={o.status}
+                  onChange={(e) => updateOrderStatus(o.id, e.target.value as any)}
+                  className="rounded-md border border-input bg-background px-2 py-1 text-xs outline-none transition-colors focus:border-foreground/50"
+                >
+                  <option value="new">{t("status.new")}</option>
+                  <option value="in_progress">{t("status.in_progress")}</option>
+                  <option value="done">{t("status.done")}</option>
+                  <option value="cancelled">{t("status.cancelled")}</option>
+                </select>
                 <span className="text-sm text-muted-foreground">{formatDate(o.createdAt)}</span>
                 <span className="w-24 text-right text-sm font-medium">{formatPrice(o.total)}</span>
               </div>
