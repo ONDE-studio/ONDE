@@ -18,13 +18,16 @@ export default function CheckoutPage() {
   const { cart, cartTotal, currentUser, createOrder } = useStore()
   const router = useRouter()
 
-  const [method, setMethod] = useState<OrderMethod>("account")
+  const [method, setMethod] = useState<OrderMethod>("telegram") // Default to telegram
   const [name, setName] = useState(currentUser?.name ?? "")
+  const [address, setAddress] = useState("")
+  const [deliveryPayment, setDeliveryPayment] = useState("")
+  const [agreement, setAgreement] = useState(false)
   const [contact, setContact] = useState(currentUser?.email ?? "")
   const [comment, setComment] = useState("")
   const [done, setDone] = useState(false)
 
-  const canSubmit = cart.length > 0 && name.trim() && contact.trim()
+  const canSubmit = cart.length > 0 && name.trim() && address.trim() && deliveryPayment.trim() && agreement
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -32,10 +35,10 @@ export default function CheckoutPage() {
     const summary = cart
       .map((i) => `• ${i.name} × ${i.quantity} — ${i.price * i.quantity} ₽`)
       .join("\n")
-    createOrder({ method, customerName: name.trim(), contact: contact.trim(), comment: comment.trim() })
+    createOrder({ method, customerName: name.trim(), contact: contact.trim() || "-", comment: comment.trim() })
     if (method === "telegram") {
       const text = encodeURIComponent(
-        `Здравствуйте! Хочу оформить заказ:\n${summary}\n\nИтого: ${cartTotal} ₽\nИмя: ${name}${comment ? `\nКомментарий: ${comment}` : ""}`,
+        `Здравствуйте! я хочу купить:\n${summary}\n\nмой адресс: ${address}\nдоставку хочу оплатить через: ${deliveryPayment}\nс соглашением о покупке соглашаюсь(соглашение добавим потом)`
       )
       window.open(`https://t.me/${TELEGRAM_USERNAME}?text=${text}`, "_blank")
     }
@@ -150,27 +153,34 @@ export default function CheckoutPage() {
                   />
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-foreground">
-                    {t("checkout.contact")}
-                  </span>
+                  <span className="text-sm font-medium text-foreground">{t("checkout.address")}</span>
                   <input
-                    value={contact}
-                    onChange={(e) => setContact(e.target.value)}
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
                     required
-                    placeholder={locale === "ru" ? "email или @username" : "email or @username"}
+                    placeholder="Город, улица, дом, индекс"
                     className="h-11 rounded-lg border border-border bg-card px-3.5 text-sm outline-none transition-colors focus:border-foreground focus:ring-1 focus:ring-foreground"
                   />
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-foreground">
-                    {t("checkout.comment")}
-                  </span>
-                  <textarea
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    rows={3}
-                    className="rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-foreground focus:ring-1 focus:ring-foreground"
+                  <span className="text-sm font-medium text-foreground">{t("checkout.deliveryPayment")}</span>
+                  <input
+                    value={deliveryPayment}
+                    onChange={(e) => setDeliveryPayment(e.target.value)}
+                    required
+                    placeholder="Например: СДЭК, оплата при получении"
+                    className="h-11 rounded-lg border border-border bg-card px-3.5 text-sm outline-none transition-colors focus:border-foreground focus:ring-1 focus:ring-foreground"
                   />
+                </label>
+                <label className="flex items-center gap-3 py-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={agreement}
+                    onChange={(e) => setAgreement(e.target.checked)}
+                    required
+                    className="size-5 rounded border-border accent-foreground cursor-pointer"
+                  />
+                  <span className="text-sm text-foreground">{t("checkout.agreement")}</span>
                 </label>
               </div>
 

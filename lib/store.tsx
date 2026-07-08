@@ -6,6 +6,7 @@ import { defaultHeroSettings, seedOrders, seedProducts, seedUsers } from "./mock
 import { supabase } from "./supabase"
 
 const SESSION_KEY = "onde-session-v1"
+const CART_KEY = "onde-cart-v1"
 
 interface StoreValue {
   ready: boolean
@@ -94,7 +95,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     loadData()
   }, [])
 
-  // Check saved session
+  // Check saved session & cart
   useEffect(() => {
     if (!ready) return
     try {
@@ -103,10 +104,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const u = users.find((x) => x.email === email)
         if (u) setCurrentUser(u)
       }
+      const savedCart = window.localStorage.getItem(CART_KEY)
+      if (savedCart) {
+        setCart(JSON.parse(savedCart))
+      }
     } catch {
       // ignore
     }
   }, [ready, users])
+
+  // Persist cart on change
+  useEffect(() => {
+    if (!ready) return
+    try {
+      window.localStorage.setItem(CART_KEY, JSON.stringify(cart))
+    } catch {
+      // ignore
+    }
+  }, [cart, ready])
 
   const persistSession = useCallback((email: string | null) => {
     try {
@@ -246,14 +261,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
     }
     const { error } = await supabase.from("products").insert([product])
-    if (!error) {
+    if (error) {
+      console.error("Failed to add product", error)
+      alert("Ошибка при сохранении товара: " + error.message)
+    } else {
       setProducts((prev) => [...prev, product])
     }
   }, [products])
 
   const updateProduct = useCallback(async (id: string, input: Partial<Product>) => {
     const { error } = await supabase.from("products").update(input).eq("id", id)
-    if (!error) {
+    if (error) {
+      console.error("Failed to update product", error)
+      alert("Ошибка при обновлении товара: " + error.message)
+    } else {
       setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...input } : p)))
     }
   }, [])
