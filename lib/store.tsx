@@ -285,7 +285,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const deleteProduct = useCallback(async (id: string) => {
     const { error } = await supabase.from("products").delete().eq("id", id)
-    if (!error) {
+    if (error) {
+      console.error("Failed to delete product", error)
+      alert("Ошибка при удалении товара: " + error.message)
+    } else {
       setProducts((prev) => prev.filter((p) => p.id !== id))
     }
   }, [])
@@ -310,10 +313,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     })
     
     // Update DB
-    await Promise.all([
-      supabase.from("products").update({ position: b.position }).eq("id", a.id),
-      supabase.from("products").update({ position: a.position }).eq("id", b.id),
-    ])
+    const { error: e1 } = await supabase.from("products").update({ position: b.position }).eq("id", a.id)
+    const { error: e2 } = await supabase.from("products").update({ position: a.position }).eq("id", b.id)
+
+    if (e1 || e2) {
+      console.error("Failed to move product", e1 || e2)
+      alert("Ошибка при изменении порядка товаров")
+    } else {
+      setProducts((prev) => {
+        const next = [...prev]
+        const ia = next.findIndex((p) => p.id === a.id)
+        const ib = next.findIndex((p) => p.id === b.id)
+        next[ia] = { ...a, position: b.position }
+        next[ib] = { ...b, position: a.position }
+        return next
+      })
+    }
   }, [products])
 
   // ---- hero ----
