@@ -73,23 +73,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const [
           { data: p, error: ep },
           { data: o, error: eo },
-          { data: u, error: eu },
           { data: s, error: es }
         ] = await Promise.all([
           supabase.from("products").select("*").order("position", { ascending: true }),
           supabase.from("orders").select("*").order("createdAt", { ascending: false }),
-          supabase.from("users").select("*"),
           supabase.from("showcase_settings").select("*").eq("id", "hero").maybeSingle(),
         ])
 
-        if (ep || eu) {
-          console.error("Supabase load error:", ep, eu)
-          alert("Ошибка подключения к Supabase. Проверьте правильность ANON_KEY и URL, а также созданы ли таблицы. Подробности в консоли браузера.")
+        if (ep) {
+          console.error("Supabase load error:", ep)
+          alert("Ошибка подключения к Supabase. Проверьте правильность ANON_KEY и URL. Подробности в консоли браузера.")
         }
 
         if (p) setProducts(p)
         if (o) setOrders(o)
-        if (u) setUsers(u)
         if (s) setHeroSettings(s.settings as HeroSettings)
       } catch (err) {
         console.error("Error loading data from Supabase:", err)
@@ -103,17 +100,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // Check saved session & cart
   useEffect(() => {
     if (!ready) return
-    try {
-      const email = window.localStorage.getItem(SESSION_KEY)
-      if (email) {
-        const u = users.find((x) => x.email === email)
-        if (u) {
-          setCurrentUser(u)
-        } else if (users.length === 0 && email === "admin@onde.studio") {
-          // Fallback if DB connection failed so admin can still enter panel
-          setCurrentUser({ email, name: "Admin (Fallback)", password: "", role: "admin", createdAt: new Date().toISOString() })
-        }
+
+    // Supabase Auth listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        const u = session.user
+        const role = u.email === "admin@onde.studio" ? "admin" : "customer"
+        setCurrentUser({
+          email: u.email!,
+          name: u.user_metadata?.name || "User",
+          password: "",
+          role,
+          createdAt: u.created_at,
+        })
+      } else {
+        setCurrentUser(null)
       }
+    })
+
+    try {
       const savedCart = window.localStorage.getItem(CART_KEY)
       if (savedCart) {
         setCart(JSON.parse(savedCart))
@@ -121,7 +126,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // ignore
     }
-  }, [ready, users])
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [ready])
 
   // Persist cart on change
   useEffect(() => {
@@ -134,12 +143,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [cart, ready])
 
   const persistSession = useCallback((email: string | null) => {
-    try {
-      if (email) window.localStorage.setItem(SESSION_KEY, email)
-      else window.localStorage.removeItem(SESSION_KEY)
-    } catch {
-      // ignore
-    }
+    // No-op, left for backwards compatibility in case it's used elsewhere
   }, [])
 
   // ---- cart ----
@@ -185,56 +189,50 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // ---- auth ----
   const login = useCallback(
     async (email: string, password: string) => {
-      const u = users.find((x) => x.email.toLowerCase() === email.trim().toLowerCase())
-      if (!u) {
-        // Fallback for admin if DB connection failed
-        if (email.trim().toLowerCase() === "admin@onde.studio" && password === "admin123" && users.length === 0) {
-          const fallbackUser: User = { email, name: "Admin (Fallback)", password, role: "admin", createdAt: new Date().toISOString() }
-          setCurrentUser(fallbackUser)
-          persistSession(email)
-          return { ok: true }
-        }
-        return { ok: false, error: "not_found" }
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        return { ok: false, error: error.message.includes("Invalid login") ? "not_found" : "wrong_password" }
       }
-      if (u.password !== password) return { ok: false, error: "wrong_password" }
-      setCurrentUser(u)
-      persistSession(u.email)
       return { ok: true }
     },
-    [users, persistSession],
+    [],
   )
 
   const register = useCallback(
     async (name: string, email: string, password: string) => {
-      const exists = users.some((x) => x.email.toLowerCase() === email.trim().toLowerCase())
-      if (exists) return { ok: false, error: "exists" }
-      const user: User = {
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
+      const { error } = await supabase.auth.signUp({
+        email,
         password,
-        role: "customer",
-        createdAt: new Date().toISOString(),
-      }
+        options: {
+          data: { name }
+        }
+      })
       
-      const { error } = await supabase.from("users").insert([user])
       if (error) {
         console.error("Registration error:", error)
         alert("Ошибка при регистрации: " + error.message)
-        return { ok: false, error: "server_error" }
+        return { ok: false, error: "exists" }
       }
       
-      setUsers((prev) => [...prev, user])
-      setCurrentUser(user)
-      persistSession(user.email)
+      // Also save to our custom users table for MVP backwards compatibility 
+      const user: User = {
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password: "***",
+        role: "customer",
+        createdAt: new Date().toISOString(),
+      }
+      await supabase.from("users").insert([user])
+      
       return { ok: true }
     },
-    [users, persistSession],
+    [],
   )
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut()
     setCurrentUser(null)
-    persistSession(null)
-  }, [persistSession])
+  }, [])
 
   // ---- orders ----
   const createOrder = useCallback(
