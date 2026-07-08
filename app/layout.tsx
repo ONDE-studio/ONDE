@@ -25,9 +25,9 @@ export const metadata: Metadata = {
     "ONDE — студия премиальной 3D-печати. Штучные вазы, свет, арт-объекты и функциональные детали ручной работы.",
   keywords: ["3d печать", "студия 3d печати", "напечатанная ваза", "дизайнерский декор", "3d принтер", "купить вазу", "сувениры на заказ", "печать на 3d принтере"],
   icons: {
-    icon: "/icon.svg",
-    shortcut: "/icon.svg",
-    apple: "/icon.svg",
+    icon: "/icon.svg?v=2",
+    shortcut: "/icon.svg?v=2",
+    apple: "/icon.svg?v=2",
   },
   generator: "v0.app",
 }
