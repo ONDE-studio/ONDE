@@ -42,7 +42,7 @@ export default function LoginPage() {
         setError(res.error === "server_error" ? "Ошибка сервера" : t("auth.errExists"))
         return
       }
-      router.push("/account")
+      router.push("/")
     }
   }
 
