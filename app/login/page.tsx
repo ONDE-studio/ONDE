@@ -26,20 +26,20 @@ export default function LoginPage() {
     else router.push("/account")
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     if (mode === "login") {
-      const res = login(email, password)
+      const res = await login(email, password)
       if (!res.ok) {
         setError(res.error === "wrong_password" ? t("auth.errWrong") : t("auth.errNotFound"))
         return
       }
       redirectByRole(email)
     } else {
-      const res = register(name, email, password)
+      const res = await register(name, email, password)
       if (!res.ok) {
-        setError(t("auth.errExists"))
+        setError(res.error === "server_error" ? "Ошибка сервера" : t("auth.errExists"))
         return
       }
       router.push("/account")

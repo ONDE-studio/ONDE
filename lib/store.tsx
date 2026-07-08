@@ -174,7 +174,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // ---- auth ----
   const login = useCallback(
-    (email: string, password: string) => {
+    async (email: string, password: string) => {
       const u = users.find((x) => x.email.toLowerCase() === email.trim().toLowerCase())
       if (!u) return { ok: false, error: "not_found" }
       if (u.password !== password) return { ok: false, error: "wrong_password" }
@@ -186,7 +186,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   )
 
   const register = useCallback(
-    (name: string, email: string, password: string) => {
+    async (name: string, email: string, password: string) => {
       const exists = users.some((x) => x.email.toLowerCase() === email.trim().toLowerCase())
       if (exists) return { ok: false, error: "exists" }
       const user: User = {
@@ -197,10 +197,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         createdAt: new Date().toISOString(),
       }
       
-      supabase.from("users").insert([user]).then(({ error }) => {
-        if (!error) setUsers((prev) => [...prev, user])
-      })
+      const { error } = await supabase.from("users").insert([user])
+      if (error) {
+        console.error("Registration error:", error)
+        alert("Ошибка при регистрации: " + error.message)
+        return { ok: false, error: "server_error" }
+      }
       
+      setUsers((prev) => [...prev, user])
       setCurrentUser(user)
       persistSession(user.email)
       return { ok: true }
