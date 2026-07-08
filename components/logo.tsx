@@ -18,11 +18,11 @@ export function Logo({
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        <!-- Outer clover -->
+        {/* Outer clover */}
         <path d="M 50 20 C 65 5, 95 35, 80 50 C 95 65, 65 95, 50 80 C 35 95, 5 65, 20 50 C 5 35, 35 5, 50 20 Z" />
-        <!-- Inner layer -->
+        {/* Inner layer */}
         <path d="M 50 35 C 57.5 27.5, 72.5 42.5, 65 50 C 72.5 57.5, 57.5 72.5, 50 65 C 42.5 72.5, 27.5 57.5, 35 50 C 27.5 42.5, 42.5 27.5, 50 35 Z" strokeWidth="8" />
-        <!-- Core -->
+        {/* Core */}
         <circle cx="50" cy="50" r="4" fill="currentColor" stroke="none" />
       </svg>
       <span className="flex flex-col leading-none">
