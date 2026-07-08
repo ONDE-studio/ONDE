@@ -3,16 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import type { CartItem, HeroSettings, Order, OrderMethod, OrderStatus, Product, User } from "./types"
 import { defaultHeroSettings, seedOrders, seedProducts, seedUsers } from "./mock-data"
+import { supabase } from "./supabase"
 
-const STORAGE_KEY = "onde-store-v1"
 const SESSION_KEY = "onde-session-v1"
-
-interface Persisted {
-  products: Product[]
-  orders: Order[]
-  users: User[]
-  heroSettings: HeroSettings
-}
 
 interface StoreValue {
   ready: boolean
@@ -39,79 +32,81 @@ interface StoreValue {
     customerName: string
     contact: string
     comment: string
-  }) => Order
-  updateOrderStatus: (id: string, status: OrderStatus) => void
+  }) => Promise<Order>
+  updateOrderStatus: (id: string, status: OrderStatus) => Promise<void>
   // products (admin)
-  addProduct: (input: Omit<Product, "id" | "position" | "createdAt">) => void
-  updateProduct: (id: string, input: Partial<Product>) => void
-  deleteProduct: (id: string) => void
-  moveProduct: (id: string, direction: "up" | "down") => void
+  addProduct: (input: Omit<Product, "id" | "position" | "createdAt">) => Promise<void>
+  updateProduct: (id: string, input: Partial<Product>) => Promise<void>
+  deleteProduct: (id: string) => Promise<void>
+  moveProduct: (id: string, direction: "up" | "down") => Promise<void>
   // hero (admin)
-  updateHeroSettings: (settings: HeroSettings) => void
+  updateHeroSettings: (settings: HeroSettings) => Promise<void>
 }
 
 const StoreContext = createContext<StoreValue | null>(null)
 
-function loadPersisted(): Persisted {
-  if (typeof window === "undefined") {
-    return { products: seedProducts, orders: seedOrders, users: seedUsers, heroSettings: defaultHeroSettings }
-  }
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Persisted
-      // Ensure heroSettings exists (migration from old data)
-      if (!parsed.heroSettings) parsed.heroSettings = defaultHeroSettings
-      // Ensure isOnSale exists on all products (migration)
-      parsed.products = parsed.products.map((p) => ({
-        ...p,
-        isOnSale: p.isOnSale ?? false,
-      }))
-      return parsed
-    }
-  } catch {
-    // ignore
-  }
-  return { products: seedProducts, orders: seedOrders, users: seedUsers, heroSettings: defaultHeroSettings }
-}
-
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false)
-  const [products, setProducts] = useState<Product[]>(seedProducts)
-  const [orders, setOrders] = useState<Order[]>(seedOrders)
-  const [users, setUsers] = useState<User[]>(seedUsers)
+  const [products, setProducts] = useState<Product[]>([])
+  const [orders, setOrders] = useState<Order[]>([])
+  const [users, setUsers] = useState<User[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [heroSettings, setHeroSettings] = useState<HeroSettings>(defaultHeroSettings)
 
-  // hydrate
+  // hydrate from Supabase
   useEffect(() => {
-    const data = loadPersisted()
-    setProducts(data.products)
-    setOrders(data.orders)
-    setUsers(data.users)
-    setHeroSettings(data.heroSettings)
+    async function loadData() {
+      // Check if Supabase keys are configured (basic check)
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
+        console.warn("Supabase is not configured. Falling back to mock data.")
+        setProducts(seedProducts)
+        setOrders(seedOrders)
+        setUsers(seedUsers)
+        setHeroSettings(defaultHeroSettings)
+        setReady(true)
+        return
+      }
+
+      try {
+        const [
+          { data: p },
+          { data: o },
+          { data: u },
+          { data: s }
+        ] = await Promise.all([
+          supabase.from("products").select("*").order("position", { ascending: true }),
+          supabase.from("orders").select("*").order("createdAt", { ascending: false }),
+          supabase.from("users").select("*"),
+          supabase.from("showcase_settings").select("*").eq("id", "hero").single(),
+        ])
+
+        if (p) setProducts(p)
+        if (o) setOrders(o)
+        if (u) setUsers(u)
+        if (s) setHeroSettings(s.settings as HeroSettings)
+      } catch (err) {
+        console.error("Error loading data from Supabase:", err)
+      } finally {
+        setReady(true)
+      }
+    }
+    loadData()
+  }, [])
+
+  // Check saved session
+  useEffect(() => {
+    if (!ready) return
     try {
       const email = window.localStorage.getItem(SESSION_KEY)
       if (email) {
-        const u = data.users.find((x) => x.email === email)
+        const u = users.find((x) => x.email === email)
         if (u) setCurrentUser(u)
       }
     } catch {
       // ignore
     }
-    setReady(true)
-  }, [])
-
-  // persist
-  useEffect(() => {
-    if (!ready) return
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ products, orders, users, heroSettings }))
-    } catch {
-      // ignore
-    }
-  }, [ready, products, orders, users, heroSettings])
+  }, [ready, users])
 
   const persistSession = useCallback((email: string | null) => {
     try {
@@ -186,7 +181,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         role: "customer",
         createdAt: new Date().toISOString(),
       }
-      setUsers((prev) => [...prev, user])
+      
+      supabase.from("users").insert([user]).then(({ error }) => {
+        if (!error) setUsers((prev) => [...prev, user])
+      })
+      
       setCurrentUser(user)
       persistSession(user.email)
       return { ok: true }
@@ -200,8 +199,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [persistSession])
 
   // ---- orders ----
-  const createOrder = useCallback<StoreValue["createOrder"]>(
-    (input) => {
+  const createOrder = useCallback(
+    async (input: { method: OrderMethod; customerName: string; contact: string; comment: string }) => {
       const order: Order = {
         id: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
         items: cart.map((i) => ({
@@ -219,58 +218,85 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         userEmail: currentUser?.email ?? null,
         createdAt: new Date().toISOString(),
       }
-      setOrders((prev) => [order, ...prev])
-      setCart([])
+      
+      const { error } = await supabase.from("orders").insert([order])
+      if (!error) {
+        setOrders((prev) => [order, ...prev])
+        setCart([])
+      }
       return order
     },
     [cart, currentUser],
   )
 
-  const updateOrderStatus = useCallback((id: string, status: OrderStatus) => {
-    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)))
+  const updateOrderStatus = useCallback(async (id: string, status: OrderStatus) => {
+    const { error } = await supabase.from("orders").update({ status }).eq("id", id)
+    if (!error) {
+      setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)))
+    }
   }, [])
 
   // ---- products ----
-  const addProduct = useCallback<StoreValue["addProduct"]>((input) => {
+  const addProduct = useCallback(async (input: Omit<Product, "id" | "position" | "createdAt">) => {
+    const position = products.length ? Math.max(...products.map((p) => p.position)) + 1 : 0
+    const product: Product = {
+      ...input,
+      id: `p-${Date.now().toString(36)}`,
+      position,
+      createdAt: new Date().toISOString(),
+    }
+    const { error } = await supabase.from("products").insert([product])
+    if (!error) {
+      setProducts((prev) => [...prev, product])
+    }
+  }, [products])
+
+  const updateProduct = useCallback(async (id: string, input: Partial<Product>) => {
+    const { error } = await supabase.from("products").update(input).eq("id", id)
+    if (!error) {
+      setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...input } : p)))
+    }
+  }, [])
+
+  const deleteProduct = useCallback(async (id: string) => {
+    const { error } = await supabase.from("products").delete().eq("id", id)
+    if (!error) {
+      setProducts((prev) => prev.filter((p) => p.id !== id))
+    }
+  }, [])
+
+  const moveProduct = useCallback(async (id: string, direction: "up" | "down") => {
+    const sorted = [...products].sort((a, b) => a.position - b.position)
+    const index = sorted.findIndex((p) => p.id === id)
+    if (index === -1) return
+    const swapWith = direction === "up" ? index - 1 : index + 1
+    if (swapWith < 0 || swapWith >= sorted.length) return
+    
+    const a = sorted[index]
+    const b = sorted[swapWith]
+    
+    // Optimistic update
     setProducts((prev) => {
-      const position = prev.length ? Math.max(...prev.map((p) => p.position)) + 1 : 0
-      const product: Product = {
-        ...input,
-        id: `p-${Date.now().toString(36)}`,
-        position,
-        createdAt: new Date().toISOString(),
-      }
-      return [...prev, product]
+      const newSorted = [...prev].sort((x, y) => x.position - y.position)
+      const tmp = newSorted[index].position
+      newSorted[index].position = newSorted[swapWith].position
+      newSorted[swapWith].position = tmp
+      return newSorted
     })
-  }, [])
-
-  const updateProduct = useCallback<StoreValue["updateProduct"]>((id, input) => {
-    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...input } : p)))
-  }, [])
-
-  const deleteProduct = useCallback((id: string) => {
-    setProducts((prev) => prev.filter((p) => p.id !== id))
-  }, [])
-
-  const moveProduct = useCallback((id: string, direction: "up" | "down") => {
-    setProducts((prev) => {
-      const sorted = [...prev].sort((a, b) => a.position - b.position)
-      const index = sorted.findIndex((p) => p.id === id)
-      if (index === -1) return prev
-      const swapWith = direction === "up" ? index - 1 : index + 1
-      if (swapWith < 0 || swapWith >= sorted.length) return prev
-      const a = sorted[index]
-      const b = sorted[swapWith]
-      const tmp = a.position
-      a.position = b.position
-      b.position = tmp
-      return [...sorted]
-    })
-  }, [])
+    
+    // Update DB
+    await Promise.all([
+      supabase.from("products").update({ position: b.position }).eq("id", a.id),
+      supabase.from("products").update({ position: a.position }).eq("id", b.id),
+    ])
+  }, [products])
 
   // ---- hero ----
-  const updateHeroSettings = useCallback((settings: HeroSettings) => {
-    setHeroSettings(settings)
+  const updateHeroSettings = useCallback(async (settings: HeroSettings) => {
+    const { error } = await supabase.from("showcase_settings").upsert({ id: "hero", settings })
+    if (!error) {
+      setHeroSettings(settings)
+    }
   }, [])
 
   const value: StoreValue = {
