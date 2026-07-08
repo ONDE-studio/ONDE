@@ -2,9 +2,13 @@
 
 import { useCallback, useRef, useState } from "react"
 import Image from "next/image"
-import { Upload, X } from "lucide-react"
+import { Upload, X, Crop as CropIcon } from "lucide-react"
+import Cropper from "react-easy-crop"
+import "react-easy-crop/react-easy-crop.css"
+import { Button } from "@/components/ui/button"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { getCroppedImg } from "@/lib/crop-image"
 
 export function ImageUpload({
   value,
@@ -17,21 +21,73 @@ export function ImageUpload({
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
 
+  // Cropper states
+  const [tempImage, setTempImage] = useState<string | null>(null)
+  const [crop, setCrop] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
+
   const handleFile = useCallback(
     (file: File | undefined) => {
       if (!file || !file.type.startsWith("image/")) return
       const reader = new FileReader()
       reader.onload = () => {
-        if (typeof reader.result === "string") onChange(reader.result)
+        if (typeof reader.result === "string") setTempImage(reader.result)
       }
       reader.readAsDataURL(file)
     },
-    [onChange],
+    []
   )
+
+  const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels)
+  }, [])
+
+  const handleSaveCrop = useCallback(async () => {
+    if (!tempImage || !croppedAreaPixels) return
+    try {
+      const croppedImage = await getCroppedImg(tempImage, croppedAreaPixels)
+      onChange(croppedImage)
+      setTempImage(null)
+    } catch (e) {
+      console.error(e)
+    }
+  }, [tempImage, croppedAreaPixels, onChange])
 
   return (
     <div>
-      {value ? (
+      {tempImage ? (
+        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border bg-black/90">
+          <Cropper
+            image={tempImage}
+            crop={crop}
+            zoom={zoom}
+            aspect={4 / 3}
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={onCropComplete}
+          />
+          <div className="absolute bottom-2 left-2 right-2 flex justify-between gap-2 z-10">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setTempImage(null)}
+              className="bg-background/80 hover:bg-background/100"
+            >
+              Отмена
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSaveCrop}
+            >
+              <CropIcon className="mr-1.5 h-4 w-4" />
+              Применить
+            </Button>
+          </div>
+        </div>
+      ) : value ? (
         <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border bg-secondary">
           <Image src={value || "/placeholder.svg"} alt="" fill className="object-cover" sizes="400px" />
           <button
@@ -72,7 +128,11 @@ export function ImageUpload({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFile(e.target.files?.[0])}
+        onChange={(e) => {
+          handleFile(e.target.files?.[0])
+          // Reset the input value so the same file can be selected again if canceled
+          if (inputRef.current) inputRef.current.value = ""
+        }}
       />
     </div>
   )
