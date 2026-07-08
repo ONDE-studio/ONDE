@@ -71,16 +71,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const [
-          { data: p },
-          { data: o },
-          { data: u },
-          { data: s }
+          { data: p, error: ep },
+          { data: o, error: eo },
+          { data: u, error: eu },
+          { data: s, error: es }
         ] = await Promise.all([
           supabase.from("products").select("*").order("position", { ascending: true }),
           supabase.from("orders").select("*").order("createdAt", { ascending: false }),
           supabase.from("users").select("*"),
-          supabase.from("showcase_settings").select("*").eq("id", "hero").single(),
+          supabase.from("showcase_settings").select("*").eq("id", "hero").maybeSingle(),
         ])
+
+        if (ep || eu) {
+          console.error("Supabase load error:", ep, eu)
+          alert("Ошибка подключения к Supabase. Проверьте правильность ANON_KEY и URL, а также созданы ли таблицы. Подробности в консоли браузера.")
+        }
 
         if (p) setProducts(p)
         if (o) setOrders(o)
@@ -102,7 +107,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const email = window.localStorage.getItem(SESSION_KEY)
       if (email) {
         const u = users.find((x) => x.email === email)
-        if (u) setCurrentUser(u)
+        if (u) {
+          setCurrentUser(u)
+        } else if (users.length === 0 && email === "admin@onde.studio") {
+          // Fallback if DB connection failed so admin can still enter panel
+          setCurrentUser({ email, name: "Admin (Fallback)", password: "", role: "admin", createdAt: new Date().toISOString() })
+        }
       }
       const savedCart = window.localStorage.getItem(CART_KEY)
       if (savedCart) {
@@ -176,7 +186,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       const u = users.find((x) => x.email.toLowerCase() === email.trim().toLowerCase())
-      if (!u) return { ok: false, error: "not_found" }
+      if (!u) {
+        // Fallback for admin if DB connection failed
+        if (email.trim().toLowerCase() === "admin@onde.studio" && password === "admin123" && users.length === 0) {
+          const fallbackUser: User = { email, name: "Admin (Fallback)", password, role: "admin", createdAt: new Date().toISOString() }
+          setCurrentUser(fallbackUser)
+          persistSession(email)
+          return { ok: true }
+        }
+        return { ok: false, error: "not_found" }
+      }
       if (u.password !== password) return { ok: false, error: "wrong_password" }
       setCurrentUser(u)
       persistSession(u.email)
