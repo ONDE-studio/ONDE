@@ -38,7 +38,9 @@ export default function LoginPage() {
         }
         return
       }
-      router.push("/account")
+      const searchParams = new URLSearchParams(window.location.search)
+      const isAdminRedirect = searchParams.get("admin") === "1"
+      router.push(isAdminRedirect ? "/admin" : "/account")
     } else {
       const res = await register(name, email, password)
       if (!res.ok) {
