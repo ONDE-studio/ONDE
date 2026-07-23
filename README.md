@@ -85,3 +85,4 @@ npm run build
 - [Безопасность и RLS (`docs/SECURITY.md`)](docs/SECURITY.md)
 - [Инструкция по Развертыванию (`docs/DEPLOYMENT.md`)](docs/DEPLOYMENT.md)
 - [Бизнес-процесс Заказов (`docs/ORDER_FLOW.md`)](docs/ORDER_FLOW.md)
+
