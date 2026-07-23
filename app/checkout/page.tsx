@@ -292,9 +292,11 @@ export default function CheckoutPage() {
 
                         <div className="text-right">
                           <span className="font-semibold text-sm text-foreground">
-                            {q.price > 0 ? `${formatPrice(q.price)}` : "По согласованию"}
+                            {q.price !== null && q.price > 0 ? formatPrice(q.price) : "По согласованию"}
                           </span>
-                          <p className="text-[10px] text-muted-foreground">{q.minDays}-{q.maxDays} дн.</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {q.minDays !== null && q.maxDays !== null ? `${q.minDays}–${q.maxDays} дн.` : "Срок уточняется"}
+                          </p>
                         </div>
                       </button>
                     ))}

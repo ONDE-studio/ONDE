@@ -1,9 +1,10 @@
 import { Metadata } from "next"
-import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
+import Link from "next/link"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient as createServerClient } from "@/lib/supabase/server"
+import { verifyToken } from "@/lib/access-token"
 import { OrderSuccessClient } from "./order-success-client"
 
 interface Props {
@@ -12,43 +13,84 @@ interface Props {
 }
 
 export const metadata: Metadata = {
-  title: "Детали заявки на заказ | ONDE Studio",
+  title: "Детали заявки | ONDE Studio",
   robots: { index: false, follow: false },
 }
 
-async function getOrder(id: string) {
-  const supabase = createAdminClient()
-  const { data: order } = await supabase
-    .from("orders")
-    .select("*")
-    .or(`id.eq.${id},public_number.eq.${id}`)
-    .maybeSingle()
-
-  return order
-}
+export const dynamic = "force-dynamic"
 
 export default async function OrderPage({ params, searchParams }: Props) {
   const { id } = await params
-  const { token } = await searchParams
-  const order = await getOrder(id)
+  const { token: rawToken } = await searchParams
 
-  if (!order) {
+  const supabase = createAdminClient()
+
+  // 1. Load order — use admin client so RLS doesn't block server lookup
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select(
+      "id, public_number, status, customer_name, contact, recipient_address, " +
+      "items_snapshot, subtotal, delivery_provider_name, delivery_service_name, " +
+      "delivery_price, delivery_min_days, delivery_max_days, estimated_total, " +
+      "currency, comment, created_at, user_id, consent_terms"
+    )
+    .or(`id.eq.${id},public_number.eq.${id}`)
+    .maybeSingle()
+
+  if (orderError || !order || typeof order !== 'object' || Array.isArray(order)) {
     notFound()
   }
 
-  // Security Verification:
-  // 1. Guest access via access token
-  const hasValidToken = Boolean(token && order.access_token && token === order.access_token)
+  // Safe cast — notFound() above ensures order is a valid row object
+  const safeOrder = order as Record<string, unknown>
 
-  // 2. Authenticated user ownership / admin check
+  // 2. Verify guest token via stored hash (constant-time comparison)
+  let hasValidToken = false
+  if (rawToken) {
+    const { data: tokenRecord } = await supabase
+      .from("order_access_tokens")
+      .select("id, token_hash, expires_at, revoked_at")
+      .eq("order_id", safeOrder.id as string)
+      .is("revoked_at", null)
+      .maybeSingle()
+
+    if (tokenRecord && !tokenRecord.revoked_at) {
+      const notExpired = !tokenRecord.expires_at || new Date(tokenRecord.expires_at) > new Date()
+      hasValidToken = notExpired && verifyToken(rawToken, tokenRecord.token_hash)
+
+      if (hasValidToken) {
+        // Update last_used_at (fire-and-forget)
+        supabase
+          .from("order_access_tokens")
+          .update({ last_used_at: new Date().toISOString() })
+          .eq("id", tokenRecord.id)
+          .then(() => {})
+      }
+    }
+  }
+
+  // 3. Check authenticated session
+  let isOwner = false
+  let isAdmin = false
+
   const serverSupabase = await createServerClient()
-  const { data: { session } } = await serverSupabase.auth.getSession()
-  const currentUserId = session?.user?.id
+  const { data: sessionData } = await serverSupabase.auth.getSession()
+  const session = sessionData?.session
 
-  const isOwner = Boolean(currentUserId && order.user_id && currentUserId === order.user_id)
-  const isAdmin = Boolean(
-    session?.user?.app_metadata?.role === "admin" || session?.user?.user_metadata?.role === "admin"
-  )
+  if (session?.user) {
+    isOwner = Boolean(safeOrder.user_id && session.user.id === safeOrder.user_id)
+    // Admin check via app_metadata only (server-controlled, user cannot modify)
+    isAdmin = session.user.app_metadata?.role === "admin"
+
+    if (!isAdmin) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", session.user.id)
+        .maybeSingle()
+      isAdmin = profile?.role === "admin"
+    }
+  }
 
   if (!hasValidToken && !isOwner && !isAdmin) {
     notFound()
@@ -64,8 +106,7 @@ export default async function OrderPage({ params, searchParams }: Props) {
           <ArrowLeft className="size-4" />
           Вернуться на главную
         </Link>
-
-        <OrderSuccessClient order={order} />
+        <OrderSuccessClient order={safeOrder as any} />
       </div>
     </div>
   )

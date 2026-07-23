@@ -1,8 +1,13 @@
 import { ShippingProvider, ShippingQuote, ShippingQuoteInput } from "./types"
 
+/**
+ * Manual delivery provider — no fake prices.
+ * Returns options where price is null and requiresDeliveryAgreement = true.
+ * The actual price and timing are agreed in Telegram.
+ */
 export class TelegramManualProvider implements ShippingProvider {
   id = "telegram_manual"
-  name = "Выбор службы доставки"
+  name = "Согласование доставки"
 
   isConfigured(): boolean {
     return true // Always available as fallback
@@ -10,47 +15,55 @@ export class TelegramManualProvider implements ShippingProvider {
 
   async getQuotes(_input: ShippingQuoteInput): Promise<ShippingQuote[]> {
     const now = new Date().toISOString()
+    // Manual quotes expire in 24h (user can always recalculate)
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
     return [
       {
         providerId: "cdek_manual",
-        serviceCode: "CDEK_PICKUP",
+        serviceCode: "CDEK_MANUAL",
         providerName: "СДЭК",
-        serviceName: "Доставка до ПВЗ или курьером СДЭК (расчет при согласовании)",
+        serviceName: "СДЭК — до ПВЗ или курьером",
         deliveryType: "pickup",
-        price: 0,
+        // price: null means "стоимость согласовывается"
+        price: null,
+        requiresDeliveryAgreement: true,
         currency: "RUB",
-        minDays: 2,
-        maxDays: 5,
+        minDays: null,
+        maxDays: null,
+        agreementNote: "Стоимость и срок доставки будут рассчитаны и согласованы в Telegram",
         quoteId: `cdek_manual_${Date.now()}`,
         calculatedAt: now,
         expiresAt,
       },
       {
         providerId: "yandex_manual",
-        serviceCode: "YANDEX_MARKET",
+        serviceCode: "YANDEX_MANUAL",
         providerName: "Яндекс Маркет / Яндекс Доставка",
-        serviceName: "Доставка курьером или до ПВЗ Яндекс",
+        serviceName: "Яндекс — курьером или до ПВЗ",
         deliveryType: "courier",
-        price: 0,
+        price: null,
+        requiresDeliveryAgreement: true,
         currency: "RUB",
-        minDays: 1,
-        maxDays: 3,
+        minDays: null,
+        maxDays: null,
+        agreementNote: "Стоимость и срок доставки будут рассчитаны и согласованы в Telegram",
         quoteId: `yandex_manual_${Date.now()}`,
         calculatedAt: now,
         expiresAt,
       },
       {
         providerId: "ozon_manual",
-        serviceCode: "OZON_AVITO",
+        serviceCode: "OZON_MANUAL",
         providerName: "Ozon / Авито Доставка",
-        serviceName: "Отправка через удобный пункт выдачи Ozon или Авито",
+        serviceName: "Ozon или Авито — через пункт выдачи",
         deliveryType: "pickup",
-        price: 0,
+        price: null,
+        requiresDeliveryAgreement: true,
         currency: "RUB",
-        minDays: 2,
-        maxDays: 6,
+        minDays: null,
+        maxDays: null,
+        agreementNote: "Стоимость и срок доставки будут рассчитаны и согласованы в Telegram",
         quoteId: `ozon_manual_${Date.now()}`,
         calculatedAt: now,
         expiresAt,
@@ -59,12 +72,14 @@ export class TelegramManualProvider implements ShippingProvider {
         providerId: "telegram_manual",
         serviceCode: "MANUAL_TELEGRAM",
         providerName: "Персональное согласование",
-        serviceName: "Расчёт куратором в Telegram под ваш адрес",
+        serviceName: "Любая служба — расчёт в Telegram",
         deliveryType: "courier",
-        price: 0,
+        price: null,
+        requiresDeliveryAgreement: true,
         currency: "RUB",
-        minDays: 1,
-        maxDays: 7,
+        minDays: null,
+        maxDays: null,
+        agreementNote: "Стоимость и срок доставки будут рассчитаны и согласованы в Telegram",
         quoteId: `manual_${Date.now()}`,
         calculatedAt: now,
         expiresAt,

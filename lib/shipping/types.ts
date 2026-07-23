@@ -23,10 +23,16 @@ export interface ShippingQuote {
   providerName: string
   serviceName: string
   deliveryType: "pickup" | "courier" | "post"
-  price: number
+  /** null = price requires agreement in Telegram (no fake prices) */
+  price: number | null
+  /** When true, price is not known and will be agreed in Telegram */
+  requiresDeliveryAgreement?: boolean
+  /** Human-readable note shown when requiresDeliveryAgreement = true */
+  agreementNote?: string
   currency: string
-  minDays: number
-  maxDays: number
+  /** null = duration unknown, agreed in Telegram */
+  minDays: number | null
+  maxDays: number | null
   estimatedDate?: string
   pickupPointId?: string
   pickupPointName?: string

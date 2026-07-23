@@ -1,4 +1,4 @@
-name: CI & Quality Assurance
+name: CI — ONDE Studio
 
 on:
   push:
@@ -7,34 +7,74 @@ on:
     branches: [main, master]
 
 jobs:
-  build_and_test:
+  quality:
+    name: Quality Gates
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
+      # ── Secret Scan ──────────────────────────────────────────────────────────
+      - name: Scan for leaked secrets
+        run: |
+          # Check .env.example has no real secrets (all values must be empty)
+          if grep -E "^[A-Z_]+=.{10,}" .env.example; then
+            echo "ERROR: .env.example contains non-empty secret values"
+            exit 1
+          fi
+          # Check common secret patterns in tracked files
+          if git grep -lE "(sk_live|pk_live|eyJ[A-Za-z0-9]{20,}|AAAA[A-Za-z0-9]{20,})" -- "*.ts" "*.tsx" "*.js" "*.json" 2>/dev/null | grep -v node_modules; then
+            echo "ERROR: Possible secret found in tracked files"
+            exit 1
+          fi
+          echo "✓ Secret scan passed"
+
+      # ── Node Setup ───────────────────────────────────────────────────────────
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: npm
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: npm ci
 
-      - name: Run Typecheck
-        run: npm run typecheck
-
-      - name: Run Linter
+      # ── Lint ─────────────────────────────────────────────────────────────────
+      - name: Lint
         run: npm run lint
 
-      - name: Run Unit & Integration Tests
-        run: npm run test
+      # ── TypeScript ───────────────────────────────────────────────────────────
+      - name: Typecheck
+        run: npm run typecheck
 
-      - name: Test Production Build
+      # ── Unit Tests ───────────────────────────────────────────────────────────
+      - name: Unit Tests
+        run: npm run test:unit
+
+      # ── Integration Tests ────────────────────────────────────────────────────
+      - name: Integration Tests
+        run: npm run test:integration
+
+      # ── Full Test Suite ──────────────────────────────────────────────────────
+      - name: All Tests
+        run: npm test
+
+      # ── Production Build ─────────────────────────────────────────────────────
+      - name: Build
         env:
           NEXT_PUBLIC_SITE_URL: "https://onde-studio.ru"
           NEXT_PUBLIC_SUPABASE_URL: "https://placeholder.supabase.co"
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: "placeholder-anon-key"
-          SUPABASE_SERVICE_ROLE_KEY: "placeholder-service-key"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "placeholder-anon-key-for-build"
+          SUPABASE_SERVICE_ROLE_KEY: "placeholder-service-role-key-for-build"
+          RATE_LIMIT_SECRET: "placeholder-rate-limit-secret"
+          CRON_SECRET: "placeholder-cron-secret"
         run: npm run build
+
+      # ── RLS Tests reminder ───────────────────────────────────────────────────
+      - name: RLS Tests Info
+        run: |
+          echo "──────────────────────────────────────────────"
+          echo "RLS Tests require a live Supabase instance."
+          echo "Run manually: tests/rls-verification.sql"
+          echo "See: docs/rls-testing.md"
+          echo "──────────────────────────────────────────────"

@@ -6,12 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:unit": "vitest run tests/package-builder.test.ts",
-    "test:integration": "vitest run tests/shipping-providers.test.ts",
-    "test:e2e": "echo \"E2E tests fixture check\""
+    "test:unit": "vitest run tests/access-token.test.ts tests/package-builder.test.ts",
+    "test:integration": "vitest run tests/shipping-providers.test.ts tests/order-flow.test.ts",
+    "test:rls": "echo \"RLS tests: run tests/rls-verification.sql in Supabase SQL Editor. See docs/rls-testing.md\"",
+    "test:e2e": "echo \"E2E: start dev server and run manual smoke test per docs/smoke-test.md\""
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
