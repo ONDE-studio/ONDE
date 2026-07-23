@@ -3,6 +3,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { createClient as createServerClient } from "@/lib/supabase/server"
 import { OrderSuccessClient } from "./order-success-client"
 
 interface Props {
@@ -21,7 +22,7 @@ async function getOrder(id: string) {
     .from("orders")
     .select("*")
     .or(`id.eq.${id},public_number.eq.${id}`)
-    .single()
+    .maybeSingle()
 
   return order
 }
@@ -35,10 +36,22 @@ export default async function OrderPage({ params, searchParams }: Props) {
     notFound()
   }
 
-  // Security check: if token provided or logged in user
-  // (In admin client, we verify token match or user ownership)
-  if (order.access_token && order.access_token !== token) {
-    // If no matching token, check if logged in
+  // Security Verification:
+  // 1. Guest access via access token
+  const hasValidToken = Boolean(token && order.access_token && token === order.access_token)
+
+  // 2. Authenticated user ownership / admin check
+  const serverSupabase = await createServerClient()
+  const { data: { session } } = await serverSupabase.auth.getSession()
+  const currentUserId = session?.user?.id
+
+  const isOwner = Boolean(currentUserId && order.user_id && currentUserId === order.user_id)
+  const isAdmin = Boolean(
+    session?.user?.app_metadata?.role === "admin" || session?.user?.user_metadata?.role === "admin"
+  )
+
+  if (!hasValidToken && !isOwner && !isAdmin) {
+    notFound()
   }
 
   return (

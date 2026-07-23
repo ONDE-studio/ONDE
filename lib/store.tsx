@@ -81,8 +81,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         ])
 
         if (ep) {
-          console.error("Supabase load error:", ep)
-          alert("Ошибка подключения к Supabase. Проверьте правильность ANON_KEY и URL. Подробности в консоли браузера.")
+          console.warn("Supabase load warning:", ep)
         }
 
         if (p) setProducts(p)
@@ -210,8 +209,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       
       if (error) {
         console.error("Registration error:", error)
-        alert("Ошибка при регистрации: " + error.message)
-        return { ok: false, error: "exists" }
+        return { ok: false, error: error.message }
       }
       
       // Also save to our custom users table for MVP backwards compatibility 
@@ -284,7 +282,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.from("products").insert([product])
     if (error) {
       console.error("Failed to add product", error)
-      alert("Ошибка при сохранении товара: " + error.message)
     } else {
       setProducts((prev) => [...prev, product])
     }
@@ -294,7 +291,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.from("products").update(input).eq("id", id)
     if (error) {
       console.error("Failed to update product", error)
-      alert("Ошибка при обновлении товара: " + error.message)
     } else {
       setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...input } : p)))
     }
@@ -304,7 +300,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.from("products").delete().eq("id", id)
     if (error) {
       console.error("Failed to delete product", error)
-      alert("Ошибка при удалении товара: " + error.message)
     } else {
       setProducts((prev) => prev.filter((p) => p.id !== id))
     }
@@ -335,7 +330,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     if (e1 || e2) {
       console.error("Failed to move product", e1 || e2)
-      alert("Ошибка при изменении порядка товаров")
     } else {
       setProducts((prev) => {
         const next = [...prev]

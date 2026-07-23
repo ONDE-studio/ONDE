@@ -26,6 +26,7 @@ const createOrderSchema = z.object({
   deliveryMinDays: z.number().optional(),
   deliveryMaxDays: z.number().optional(),
   userId: z.string().optional(),
+  idempotencyKey: z.string().optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -41,18 +42,38 @@ export async function POST(req: NextRequest) {
     }
 
     const payload = parseResult.data
+    const idempotencyKey = payload.idempotencyKey || req.headers.get("x-idempotency-key") || null
     const supabase = createAdminClient()
 
-    // 1. Recalculate price from DB
+    // 1. Idempotency Check: if key provided and exists, return existing order
+    if (idempotencyKey) {
+      const { data: existingOrder } = await supabase
+        .from("orders")
+        .select("id, public_number, access_token")
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle()
+
+      if (existingOrder) {
+        return NextResponse.json({
+          success: true,
+          orderId: existingOrder.id,
+          publicNumber: existingOrder.public_number,
+          accessToken: existingOrder.access_token,
+          idempotent: true,
+        })
+      }
+    }
+
+    // 2. Recalculate price from DB (never trust client values)
     const productIds = payload.items.map((i) => i.productId)
     const { data: dbProducts, error: dbError } = await supabase
       .from("products")
-      .select("id, name, slug, price, images, weight_grams, length_mm, width_mm, height_mm")
+      .select("id, name, slug, price, images, weight_grams, length_mm, width_mm, height_mm, active")
       .in("id", productIds)
 
     if (dbError || !dbProducts) {
       return NextResponse.json(
-        { error: "Не удалось получить актуальные данные о товарах" },
+        { error: "Не удалось получить актуальные данные о товарах из базы" },
         { status: 400 }
       )
     }
@@ -62,8 +83,8 @@ export async function POST(req: NextRequest) {
     let subtotal = 0
     const itemsSnapshot = payload.items.map((item) => {
       const p = productMap.get(item.productId)
-      if (!p) {
-        throw new Error(`Товар с ID ${item.productId} не найден в каталоге`)
+      if (!p || p.active === false) {
+        throw new Error(`Товар "${item.productId}" недоступен или снят с продажи`)
       }
       const unitPrice = p.price || 0
       const itemTotal = unitPrice * item.quantity
@@ -85,56 +106,67 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    // 2. Generate unique public readable number
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "")
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000)
-    const publicNumber = `ONDE-${dateStr}-${randomSuffix}`
-
     const finalTotal = subtotal + (payload.deliveryPrice || 0)
 
-    // 3. Create guest signed view token
-    const accessToken = crypto.randomBytes(24).toString("hex")
+    // 3. Cryptographically secure public_number generation with collision retry loop
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+    let publicNumber = ""
+    let newOrder = null
+    let insertError = null
+    const accessToken = crypto.randomBytes(32).toString("hex")
 
-    const orderRecord = {
-      public_number: publicNumber,
-      user_id: payload.userId || null,
-      customer_name: payload.customerName,
-      contact: payload.contact,
-      recipient_address: payload.address,
-      comment: payload.comment || null,
-      status: "new",
-      currency: "RUB",
-      items_snapshot: itemsSnapshot,
-      subtotal,
-      delivery_provider_id: payload.deliveryProviderId || "telegram_manual",
-      delivery_provider_name: payload.deliveryProviderName || "Индивидуальный расчёт",
-      delivery_service_code: payload.deliveryServiceCode || null,
-      delivery_service_name: payload.deliveryServiceName || null,
-      delivery_price: payload.deliveryPrice || 0,
-      delivery_min_days: payload.deliveryMinDays || null,
-      delivery_max_days: payload.deliveryMaxDays || null,
-      estimated_total: finalTotal,
-      access_token: accessToken,
-      created_at: new Date().toISOString(),
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const hexSuffix = crypto.randomBytes(2).toString("hex").toUpperCase()
+      publicNumber = `ONDE-${dateStr}-${hexSuffix}`
+
+      const orderRecord = {
+        public_number: publicNumber,
+        idempotency_key: idempotencyKey,
+        user_id: payload.userId || null,
+        customer_name: payload.customerName,
+        contact: payload.contact,
+        recipient_address: payload.address,
+        comment: payload.comment || null,
+        status: "new",
+        currency: "RUB",
+        items_snapshot: itemsSnapshot,
+        subtotal,
+        delivery_provider_id: payload.deliveryProviderId || "telegram_manual",
+        delivery_provider_name: payload.deliveryProviderName || "Индивидуальный расчёт",
+        delivery_service_code: payload.deliveryServiceCode || null,
+        delivery_service_name: payload.deliveryServiceName || null,
+        delivery_price: payload.deliveryPrice || 0,
+        delivery_min_days: payload.deliveryMinDays || null,
+        delivery_max_days: payload.deliveryMaxDays || null,
+        estimated_total: finalTotal,
+        access_token: accessToken,
+        created_at: new Date().toISOString(),
+      }
+
+      const res = await supabase
+        .from("orders")
+        .insert([orderRecord])
+        .select("id, public_number, access_token")
+        .single()
+
+      if (!res.error) {
+        newOrder = res.data
+        break
+      }
+      insertError = res.error
     }
 
-    const { data: newOrder, error: insertError } = await supabase
-      .from("orders")
-      .insert([orderRecord])
-      .select("id, public_number, access_token")
-      .single()
-
-    if (insertError) {
-      console.error("Order insertion error:", insertError)
+    if (!newOrder) {
+      console.error("Order insertion failed after retries:", insertError)
       return NextResponse.json(
         { error: "Не удалось сохранить заявку на сервер" },
         { status: 500 }
       )
     }
 
-    // 4. Send Telegram notification
-    await sendTelegramOrderNotification({
-      publicNumber,
+    // 4. Save notification outbox record & send Telegram notification
+    const notificationPayload = {
+      publicNumber: newOrder.public_number,
       customerName: payload.customerName,
       contact: payload.contact,
       address: payload.address,
@@ -144,7 +176,19 @@ export async function POST(req: NextRequest) {
       total: finalTotal,
       items: itemsSnapshot.map((i) => ({ name: i.name, quantity: i.quantity, price: i.unitPrice })),
       comment: payload.comment,
-    })
+    }
+
+    await supabase.from("notification_outbox").insert([
+      {
+        order_id: newOrder.id,
+        event_type: "order_created",
+        payload: notificationPayload,
+        status: "pending",
+      },
+    ])
+
+    // Immediate attempt to send Telegram bot message
+    await sendTelegramOrderNotification(notificationPayload)
 
     return NextResponse.json({
       success: true,

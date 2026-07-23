@@ -91,6 +91,7 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS estimated_total numeric DEFAU
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS tracking_number text;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS tracking_url text;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS admin_notes text;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS idempotency_key text UNIQUE;
 
 -- 4. Order Status History Table
 CREATE TABLE IF NOT EXISTS public.order_status_history (
@@ -103,12 +104,26 @@ CREATE TABLE IF NOT EXISTS public.order_status_history (
   created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 4b. Notification Outbox Table
+CREATE TABLE IF NOT EXISTS public.notification_outbox (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_type text NOT NULL DEFAULT 'order_created',
+  order_id text REFERENCES public.orders(id) ON DELETE CASCADE,
+  payload jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  attempts integer NOT NULL DEFAULT 0,
+  last_error text,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+  sent_at timestamp with time zone
+);
+
 -- 5. ENABLE ROW LEVEL SECURITY (RLS) FOR ALL TABLES
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.showcase_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.order_status_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notification_outbox ENABLE ROW LEVEL SECURITY;
 
 -- 6. RLS POLICIES
 
