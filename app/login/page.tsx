@@ -21,11 +21,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
 
-  function redirectByRole(email: string) {
-    if (email.trim().toLowerCase() === "admin@onde.studio") router.push("/admin")
-    else router.push("/account")
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -35,7 +30,7 @@ export default function LoginPage() {
         setError(res.error === "wrong_password" ? t("auth.errWrong") : t("auth.errNotFound"))
         return
       }
-      redirectByRole(email)
+      router.push("/account")
     } else {
       const res = await register(name, email, password)
       if (!res.ok) {

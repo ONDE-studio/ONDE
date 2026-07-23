@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
-import type { CartItem, HeroSettings, Order, OrderMethod, OrderStatus, Product, User } from "./types"
+import type { CartItem, HeroSettings, Order, OrderMethod, OrderStatus, Product, Role, User } from "./types"
 import { defaultHeroSettings, seedOrders, seedProducts, seedUsers } from "./mock-data"
 import { supabase } from "./supabase"
 
@@ -101,13 +101,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!ready) return
 
     // Supabase Auth listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         const u = session.user
-        const role = u.email === "admin@onde.studio" ? "admin" : "customer"
+        let role: Role = (u.app_metadata?.role as Role) || "customer"
+
+        // Fetch profile to verify role from DB
+        if (role !== "admin") {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", u.id)
+            .maybeSingle()
+          if (profile?.role === "admin") {
+            role = "admin"
+          }
+        }
+
         setCurrentUser({
+          id: u.id,
           email: u.email!,
-          name: u.user_metadata?.name || "User",
+          name: u.user_metadata?.name || "Пользователь",
           password: "",
           role,
           createdAt: u.created_at,

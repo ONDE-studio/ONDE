@@ -10,6 +10,9 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_ADMIN_CHAT_ID: z.string().optional(),
 
+  OWNER_EMAIL: z.string().email().optional(),
+  ADMIN_SETUP_SECRET: z.string().optional(),
+
   STORE_ORIGIN_COUNTRY: z.string().default("RU"),
   STORE_ORIGIN_REGION: z.string().default("Свердловская область"),
   STORE_ORIGIN_CITY: z.string().default("Екатеринбург"),

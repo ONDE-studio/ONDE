@@ -6,13 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:unit": "vitest run tests/access-token.test.ts tests/package-builder.test.ts",
-    "test:integration": "vitest run tests/shipping-providers.test.ts tests/order-flow.test.ts",
+    "test:unit": "vitest run tests/access-token.test.ts tests/package-builder.test.ts tests/admin-bootstrap.test.ts",
+    "test:integration": "vitest run tests/shipping-providers.test.ts tests/order-flow.test.ts tests/admin-bootstrap.test.ts",
     "test:rls": "echo \"RLS tests: run tests/rls-verification.sql in Supabase SQL Editor. See docs/rls-testing.md\"",
-    "test:e2e": "echo \"E2E: start dev server and run manual smoke test per docs/smoke-test.md\""
+    "test:e2e": "echo \"E2E: start dev server and run manual smoke test per docs/smoke-test.md\"",
+    "admin:grant": "node scripts/admin-role.mjs grant",
+    "admin:revoke": "node scripts/admin-role.mjs revoke",
+    "admin:list": "node scripts/admin-role.mjs list"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

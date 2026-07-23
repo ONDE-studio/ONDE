@@ -48,6 +48,8 @@ NEXT_PUBLIC_TELEGRAM_USERNAME=onde_studio
 Перейдите в консоль Supabase SQL Editor и выполните файлы из папки `supabase/migrations/`:
 1. `00_init.sql`
 2. `01_production_redesign.sql`
+3. `02_security_and_reliability.sql`
+4. `03_admin_bootstrap_security.sql`
 
 ### 5. Запуск в режиме разработки
 ```bash
@@ -61,10 +63,13 @@ npm run dev
 
 ```bash
 # Проверка типов TypeScript
-npx tsc --noEmit
+npm run typecheck
 
 # Линтинг ESLint
 npm run lint
+
+# Тестирование Vitest
+npm test
 
 # Сборка production бандла
 npm run build
@@ -72,9 +77,11 @@ npm run build
 
 ---
 
-## 📚 ДокументацияПроекта
+## 📚 Документация Проекта
 
+- [Назначение Администратора (`docs/ADMIN_SETUP.md`)](docs/ADMIN_SETUP.md)
 - [Расчет Доставки (`docs/SHIPPING.md`)](docs/SHIPPING.md)
+- [Тестирование RLS (`docs/rls-testing.md`)](docs/rls-testing.md)
 - [Безопасность и RLS (`docs/SECURITY.md`)](docs/SECURITY.md)
 - [Инструкция по Развертыванию (`docs/DEPLOYMENT.md`)](docs/DEPLOYMENT.md)
 - [Бизнес-процесс Заказов (`docs/ORDER_FLOW.md`)](docs/ORDER_FLOW.md)
