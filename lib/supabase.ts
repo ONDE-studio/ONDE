@@ -1,6 +1,17 @@
 import { createBrowserClient } from '@supabase/ssr'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder'
+// Singleton — один клиент на всё время жизни вкладки.
+// createBrowserClient сам хранит сессию в localStorage + cookies,
+// поэтому повторный вызов должен возвращать ОДИН и тот же экземпляр.
+let client: ReturnType<typeof createBrowserClient> | null = null
 
-export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
+function getSupabaseClient() {
+  if (client) return client
+  client = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  )
+  return client
+}
+
+export const supabase = getSupabaseClient()

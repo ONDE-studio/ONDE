@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js"
 import type { CartItem, HeroSettings, Order, OrderMethod, OrderStatus, Product, Role, User } from "./types"
 import { defaultHeroSettings, seedOrders, seedProducts, seedUsers } from "./mock-data"
 import { supabase } from "./supabase"
@@ -55,53 +56,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [heroSettings, setHeroSettings] = useState<HeroSettings>(defaultHeroSettings)
 
-  // hydrate from Supabase
+  // ── Auth: restore session immediately on mount (before data load) ──────────
   useEffect(() => {
-    async function loadData() {
-      // Check if Supabase keys are configured (basic check)
-      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
-        console.warn("Supabase is not configured. Falling back to mock data.")
-        setProducts(seedProducts)
-        setOrders(seedOrders)
-        setUsers(seedUsers)
-        setHeroSettings(defaultHeroSettings)
-        setReady(true)
-        return
-      }
-
-      try {
-        const [
-          { data: p, error: ep },
-          { data: o, error: eo },
-          { data: s, error: es }
-        ] = await Promise.all([
-          supabase.from("products").select("*").order("position", { ascending: true }),
-          supabase.from("orders").select("*").order("createdAt", { ascending: false }),
-          supabase.from("showcase_settings").select("*").eq("id", "hero").maybeSingle(),
-        ])
-
-        if (ep) {
-          console.warn("Supabase load warning:", ep)
-        }
-
-        if (p) setProducts(p)
-        if (o) setOrders(o)
-        if (s) setHeroSettings(s.settings as HeroSettings)
-      } catch (err) {
-        console.error("Error loading data from Supabase:", err)
-      } finally {
-        setReady(true)
-      }
-    }
-    loadData()
-  }, [])
-
-  // Check saved session & cart
-  useEffect(() => {
-    if (!ready) return
-
-    // Supabase Auth listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // Listen to auth changes — fires immediately with current session from cookies
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       if (session?.user) {
         const u = session.user
         let role: Role = (u.app_metadata?.role as Role) || "customer"
@@ -115,7 +73,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             .maybeSingle()
           if (profile?.role === "admin") {
             role = "admin"
-            // Auto refresh session to sync JWT claims
             supabase.auth.refreshSession().catch(() => {})
           }
         }
@@ -133,19 +90,56 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
     })
 
+    return () => { subscription.unsubscribe() }
+  }, [])
+
+  // ── Data: load products, orders, settings from Supabase ─────────────────────
+  useEffect(() => {
+    async function loadData() {
+      // Check if Supabase keys are configured (basic check)
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
+        console.warn("Supabase is not configured. Falling back to mock data.")
+        setProducts(seedProducts)
+        setOrders(seedOrders)
+        setUsers(seedUsers)
+        setHeroSettings(defaultHeroSettings)
+        setReady(true)
+        return
+      }
+
+      try {
+        const [
+          { data: p, error: ep },
+          { data: o },
+          { data: s },
+        ] = await Promise.all([
+          supabase.from("products").select("*").order("position", { ascending: true }),
+          supabase.from("orders").select("*").order("createdAt", { ascending: false }),
+          supabase.from("showcase_settings").select("*").eq("id", "hero").maybeSingle(),
+        ])
+
+        if (ep) console.warn("Supabase load warning:", ep)
+        if (p) setProducts(p)
+        if (o) setOrders(o)
+        if (s) setHeroSettings(s.settings as HeroSettings)
+      } catch (err) {
+        console.error("Error loading data from Supabase:", err)
+      } finally {
+        setReady(true)
+      }
+    }
+    loadData()
+  }, [])
+
+  // ── Cart: restore from localStorage ────────────────────────────────────────
+  useEffect(() => {
     try {
       const savedCart = window.localStorage.getItem(CART_KEY)
-      if (savedCart) {
-        setCart(JSON.parse(savedCart))
-      }
+      if (savedCart) setCart(JSON.parse(savedCart))
     } catch {
       // ignore
     }
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [ready])
+  }, [])
 
   // Persist cart on change
   useEffect(() => {

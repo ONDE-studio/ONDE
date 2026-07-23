@@ -19,7 +19,6 @@ export async function middleware(request: NextRequest) {
   )
 
   // ─── Private route caching: no-store ────────────────────────────────────────
-  // Orders, checkout, account, admin must never be cached by CDN or browser
   const isPrivateRoute =
     pathname.startsWith("/orders") ||
     pathname.startsWith("/checkout") ||
@@ -35,9 +34,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // ─── Admin route protection ──────────────────────────────────────────────────
-  // NOTE: This is a first-layer check only. Each admin API route must independently
-  // verify the user's role server-side — middleware alone is not sufficient.
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/setup")) {
+    // IMPORTANT: createServerClient here MUST write refreshed cookies back
+    // to the response so the session stays alive without re-login.
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -47,9 +46,8 @@ export async function middleware(request: NextRequest) {
             return request.cookies.getAll()
           },
           setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value }) =>
-              request.cookies.set(name, value)
-            )
+            // Write refreshed cookies both to the request (for supabase) and the response
+            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
             response = NextResponse.next({ request })
             cookiesToSet.forEach(({ name, value, options }) =>
               response.cookies.set(name, value, options)
@@ -59,18 +57,15 @@ export async function middleware(request: NextRequest) {
       }
     )
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+    // getUser() — not getSession() — triggers automatic token refresh
+    const { data: { user } } = await supabase.auth.getUser()
 
-    if (!session) {
+    if (!user) {
       const url = request.nextUrl.clone()
       url.pathname = "/login"
+      url.searchParams.set("redirect", pathname)
       return NextResponse.redirect(url)
     }
-
-    // NOTE: Admin role is verified per-page and per-API-route server-side.
-    // This middleware only checks authentication (not authorization).
   }
 
   return response
