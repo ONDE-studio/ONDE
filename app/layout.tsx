@@ -20,17 +20,26 @@ const fraunces = Fraunces({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://onde-studio.ru"),
   title: "ONDE — Premium 3D Printing Studio",
   description:
     "ONDE — студия премиальной 3D-печати. Штучные вазы, свет, арт-объекты и функциональные детали ручной работы.",
   keywords: ["3d печать", "студия 3d печати", "напечатанная ваза", "дизайнерский декор", "3d принтер", "купить вазу", "сувениры на заказ", "печать на 3d принтере"],
   icons: {
     icon: [
-      { url: "/icon.png?v=4", type: "image/png" },
-      { url: "/icon.svg?v=4", type: "image/svg+xml" },
+      { url: "/favicon.png?v=5", sizes: "any", type: "image/png" },
+      { url: "/icon.svg?v=5", type: "image/svg+xml" },
     ],
-    shortcut: "/icon.png?v=4",
-    apple: "/icon.png?v=4",
+    shortcut: "/favicon.png?v=5",
+    apple: "/favicon.png?v=5",
+  },
+  openGraph: {
+    title: "ONDE — Premium 3D Printing Studio",
+    description: "ONDE — студия премиальной 3D-печати. Штучные вазы, свет, арт-объекты и функциональные детали ручной работы.",
+    url: "https://onde-studio.ru",
+    siteName: "ONDE Studio",
+    locale: "ru_RU",
+    type: "website",
   },
   generator: "v0.app",
 }
