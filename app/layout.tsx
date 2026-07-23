@@ -27,11 +27,10 @@ export const metadata: Metadata = {
   keywords: ["3d печать", "студия 3d печати", "напечатанная ваза", "дизайнерский декор", "3d принтер", "купить вазу", "сувениры на заказ", "печать на 3d принтере"],
   icons: {
     icon: [
-      { url: "/favicon.png?v=5", sizes: "any", type: "image/png" },
-      { url: "/icon.svg?v=5", type: "image/svg+xml" },
+      { url: "/brand-icon.png", sizes: "any", type: "image/png" },
     ],
-    shortcut: "/favicon.png?v=5",
-    apple: "/favicon.png?v=5",
+    shortcut: "/brand-icon.png",
+    apple: "/brand-icon.png",
   },
   openGraph: {
     title: "ONDE — Premium 3D Printing Studio",
