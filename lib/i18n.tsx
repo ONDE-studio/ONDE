@@ -103,8 +103,8 @@ const dict: Dict = {
   "auth.hasAccount": { ru: "Уже есть аккаунт?", en: "Already registered?" },
   "auth.toRegister": { ru: "Зарегистрироваться", en: "Sign up" },
   "auth.toLogin": { ru: "Войти", en: "Sign in" },
-  "auth.errNotFound": { ru: "Пользователь не найден", en: "User not found" },
-  "auth.errWrong": { ru: "Неверный пароль", en: "Wrong password" },
+  "auth.errNotFound": { ru: "Неверный email или пароль", en: "Invalid email or password" },
+  "auth.errWrong": { ru: "Неверный email или пароль", en: "Invalid email or password" },
   "auth.errExists": { ru: "Такой email уже зарегистрирован", en: "This email is already registered" },
   "auth.demoHint": { ru: "Демо-доступы", en: "Demo credentials" },
 

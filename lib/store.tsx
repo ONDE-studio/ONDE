@@ -202,9 +202,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // ---- auth ----
   const login = useCallback(
     async (email: string, password: string) => {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      const cleanEmail = email.trim().toLowerCase()
+      const { error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password })
       if (error) {
-        return { ok: false, error: error.message.includes("Invalid login") ? "not_found" : "wrong_password" }
+        if (error.message.includes("Email not confirmed")) {
+          return { ok: false, error: "email_not_confirmed" }
+        }
+        return { ok: false, error: "invalid_credentials" }
       }
       return { ok: true }
     },
@@ -213,29 +217,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const register = useCallback(
     async (name: string, email: string, password: string) => {
+      const cleanEmail = email.trim().toLowerCase()
       const { error } = await supabase.auth.signUp({
-        email,
+        email: cleanEmail,
         password,
         options: {
-          data: { name }
-        }
+          data: { name: name.trim() },
+        },
       })
-      
+
       if (error) {
-        console.error("Registration error:", error)
+        console.error("Registration error:", error.message)
         return { ok: false, error: error.message }
       }
-      
-      // Also save to our custom users table for MVP backwards compatibility 
-      const user: User = {
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        password: "***",
-        role: "customer",
-        createdAt: new Date().toISOString(),
-      }
-      await supabase.from("users").insert([user])
-      
+
       return { ok: true }
     },
     [],

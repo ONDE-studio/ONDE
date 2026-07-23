@@ -21,23 +21,36 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
 
+  const [infoMessage, setInfoMessage] = useState<string | null>(null)
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setInfoMessage(null)
+
     if (mode === "login") {
       const res = await login(email, password)
       if (!res.ok) {
-        setError(res.error === "wrong_password" ? t("auth.errWrong") : t("auth.errNotFound"))
+        if (res.error === "email_not_confirmed") {
+          setError("Email не подтверждён. Пожалуйста, проверьте вашу почту.")
+        } else {
+          setError(t("auth.errWrong")) // "Неверный email или пароль"
+        }
         return
       }
       router.push("/account")
     } else {
       const res = await register(name, email, password)
       if (!res.ok) {
-        setError(res.error === "server_error" ? "Ошибка сервера" : t("auth.errExists"))
+        if (res.error?.includes("already registered") || res.error?.includes("already exists")) {
+          setError(t("auth.errExists"))
+        } else {
+          setError(res.error || "Ошибка при регистрации")
+        }
         return
       }
-      router.push("/")
+      setInfoMessage("Аккаунт создан! Теперь вы можете войти.")
+      setMode("login")
     }
   }
 
@@ -100,6 +113,11 @@ export default function LoginPage() {
                 />
               </label>
 
+              {infoMessage ? (
+                <p className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-2.5 text-xs text-emerald-600 dark:text-emerald-400">
+                  {infoMessage}
+                </p>
+              ) : null}
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
               <Button type="submit" size="lg" className="mt-1 h-11">
