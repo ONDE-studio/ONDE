@@ -311,28 +311,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const moveProduct = useCallback(async (id: string, direction: "up" | "down") => {
+    // Sort and normalize positions to 0,1,2,3... — fixes equal-position issues from DB
     const sorted = [...products].sort((a, b) => a.position - b.position)
-    const index = sorted.findIndex((p) => p.id === id)
+    const normalized = sorted.map((p, i) => ({ ...p, position: i }))
+
+    const index = normalized.findIndex((p) => p.id === id)
     if (index === -1) return
     const swapWith = direction === "up" ? index - 1 : index + 1
-    if (swapWith < 0 || swapWith >= sorted.length) return
+    if (swapWith < 0 || swapWith >= normalized.length) return
 
-    // Swap positions locally (works instantly, no DB required)
-    const newSorted = sorted.map((p, i) => {
-      if (i === index) return { ...p, position: sorted[swapWith].position }
-      if (i === swapWith) return { ...p, position: sorted[index].position }
+    // Swap positions
+    const result = normalized.map((p, i) => {
+      if (i === index) return { ...p, position: swapWith }
+      if (i === swapWith) return { ...p, position: index }
       return p
     })
-    setProducts(newSorted)
+    setProducts(result)
 
-    // Try to persist to DB — silently ignore errors
+    // Try to persist to DB silently
     try {
       await Promise.all([
-        supabase.from("products").update({ position: sorted[swapWith].position }).eq("id", sorted[index].id),
-        supabase.from("products").update({ position: sorted[index].position }).eq("id", sorted[swapWith].id),
+        supabase.from("products").update({ position: swapWith }).eq("id", normalized[index].id),
+        supabase.from("products").update({ position: index }).eq("id", normalized[swapWith].id),
       ])
     } catch {
-      // DB update failed — local state already updated, order preserved in memory
+      // local state already updated
     }
   }, [products])
 
