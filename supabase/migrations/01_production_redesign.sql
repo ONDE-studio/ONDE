@@ -13,7 +13,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 -- Trigger to automatically create profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $func$
 BEGIN
   INSERT INTO public.profiles (id, email, name, role)
   VALUES (
@@ -24,7 +27,7 @@ BEGIN
   );
   RETURN new;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$func$;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -33,7 +36,10 @@ CREATE TRIGGER on_auth_user_created
 
 -- Helper function to check if current authenticated user is an admin
 CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS boolean AS $$
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $func$
 BEGIN
   RETURN (
     coalesce(current_setting('request.jwt.claims', true)::jsonb->'app_metadata'->>'role', '') = 'admin'
@@ -43,7 +49,7 @@ BEGIN
     )
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$func$;
 
 -- 2. Expand Products Table
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS slug text UNIQUE;
