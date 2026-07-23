@@ -37,7 +37,7 @@ export async function middleware(request: NextRequest) {
   // ─── Admin route protection ──────────────────────────────────────────────────
   // NOTE: This is a first-layer check only. Each admin API route must independently
   // verify the user's role server-side — middleware alone is not sufficient.
-  if (pathname.startsWith("/admin")) {
+  if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/setup")) {
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

@@ -6,7 +6,7 @@ export const metadata = {
   robots: { index: false, follow: false },
 }
 
-export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminDashboardLayout({ children }: { children: React.ReactNode }) {
   const serverSupabase = await createServerClient()
   const {
     data: { session },
