@@ -115,6 +115,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             .maybeSingle()
           if (profile?.role === "admin") {
             role = "admin"
+            // Auto refresh session to sync JWT claims
+            supabase.auth.refreshSession().catch(() => {})
           }
         }
 
