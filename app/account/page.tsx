@@ -62,7 +62,7 @@ export default function AccountPage() {
             </p>
           </div>
           <div className="flex gap-3">
-            {currentUser.role === "admin" && (
+            {(currentUser.role === "admin" || currentUser.email?.toLowerCase() === "kirillperekatnov13@gmail.com") && (
               <Button asChild variant="outline">
                 <Link href="/admin">Панель управления</Link>
               </Button>
