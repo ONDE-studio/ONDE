@@ -15,7 +15,7 @@ const createOrderSchema = z.object({
   items: z
     .array(
       z.object({
-        productId: z.string().uuid("ID товара должен быть UUID"),
+        productId: z.string(),
         quantity: z.number().int().min(1).max(99),
         selectedVariant: z.string().max(100).optional(),
       })

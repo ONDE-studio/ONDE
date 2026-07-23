@@ -20,7 +20,6 @@ export default function CheckoutPage() {
   const [contact, setContact] = useState(currentUser?.email ?? "")
   const [city, setCity] = useState("Екатеринбург")
   const [address, setAddress] = useState("")
-  const [postalCode, setPostalCode] = useState("")
   const [comment, setComment] = useState("")
   const [termsAgreement, setTermsAgreement] = useState(false)
   const [privacyAgreement, setPrivacyAgreement] = useState(false)
@@ -52,7 +51,6 @@ export default function CheckoutPage() {
           recipient: {
             city: city.trim(),
             address: address.trim(),
-            postalCode: postalCode.trim(),
           },
           items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity })),
         }),
@@ -101,7 +99,7 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           customerName: name.trim(),
           contact: contact.trim(),
-          address: `${city.trim()}, ${address.trim()} ${postalCode.trim() ? `(${postalCode.trim()})` : ""}`,
+          address: `${city.trim()}, ${address.trim()}`,
           comment: comment.trim(),
           items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity })),
           deliveryProviderId: selectedQuote.providerId,
@@ -225,17 +223,8 @@ export default function CheckoutPage() {
                 </label>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-3">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-foreground">Индекс</span>
-                  <input
-                    value={postalCode}
-                    onChange={(e) => setPostalCode(e.target.value)}
-                    placeholder="620000"
-                    className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
-                  />
-                </label>
-                <div className="sm:col-span-2 flex items-end">
+              <div className="grid gap-4 sm:grid-cols-1">
+                <div className="flex items-end">
                   <Button
                     type="button"
                     onClick={fetchShippingQuotes}
