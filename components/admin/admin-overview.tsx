@@ -134,7 +134,7 @@ export function AdminOverview() {
                     fontSize: 12,
                     color: "var(--popover-foreground)",
                   }}
-                  formatter={(v: number) => [formatPrice(v), t("admin.revenue")]}
+                  formatter={(v: any) => [formatPrice(Number(v) || 0), t("admin.revenue")]}
                 />
                 <Area
                   type="monotone"

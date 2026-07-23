@@ -61,9 +61,10 @@ export interface Order {
 export type Role = "customer" | "admin"
 
 export interface User {
+  id?: string
   email: string
   name: string
-  password: string
+  password?: string
   role: Role
-  createdAt: string
+  createdAt?: string
 }

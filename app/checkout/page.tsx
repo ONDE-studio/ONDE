@@ -1,90 +1,146 @@
 "use client"
 
+import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
-import { ArrowLeft, Check, Send, ShoppingBag } from "lucide-react"
+import { ArrowLeft, Check, Loader2, Send, ShieldCheck, ShoppingBag, Truck } from "lucide-react"
 import { StoreShell } from "@/components/store-shell"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/lib/i18n"
 import { useStore } from "@/lib/store"
-import type { OrderMethod } from "@/lib/types"
-import { TELEGRAM_USERNAME } from "@/lib/mock-data"
-import { cn } from "@/lib/utils"
+import { ShippingQuote } from "@/lib/shipping/types"
 
 export default function CheckoutPage() {
-  const { t, formatPrice, locale } = useI18n()
-  const { cart, cartTotal, currentUser, createOrder } = useStore()
+  const { t, formatPrice } = useI18n()
+  const { cart, cartTotal, currentUser, clearCart } = useStore()
   const router = useRouter()
 
-  const [method, setMethod] = useState<OrderMethod>("telegram")
   const [name, setName] = useState(currentUser?.name ?? "")
-  const [address, setAddress] = useState("")
-  const [deliveryMethod, setDeliveryMethod] = useState("cdek")
-  const [agreement, setAgreement] = useState(false)
   const [contact, setContact] = useState(currentUser?.email ?? "")
+  const [city, setCity] = useState("Екатеринбург")
+  const [address, setAddress] = useState("")
+  const [postalCode, setPostalCode] = useState("")
   const [comment, setComment] = useState("")
-  const [done, setDone] = useState(false)
+  const [termsAgreement, setTermsAgreement] = useState(false)
+  const [privacyAgreement, setPrivacyAgreement] = useState(false)
 
-  const DELIVERY_FEE = 350
-  const FREE_DELIVERY_THRESHOLD = 3500
+  // Quotes state
+  const [quotes, setQuotes] = useState<ShippingQuote[]>([])
+  const [selectedQuote, setSelectedQuote] = useState<ShippingQuote | null>(null)
+  const [isCalculatingShipping, setIsCalculatingShipping] = useState(false)
+  const [shippingError, setShippingError] = useState<string | null>(null)
 
-  const isMoscowRegion = deliveryMethod === "cdek" || deliveryMethod === "yandex"
-  const needsDeliveryFee = isMoscowRegion
-    ? cartTotal > 0 && cartTotal < FREE_DELIVERY_THRESHOLD
-    : true // Regions always pay delivery
-  const deliveryCost = needsDeliveryFee ? (deliveryMethod === "post" ? 400 : deliveryMethod === "cdek_regions" ? 500 : DELIVERY_FEE) : 0
-  const remainingForFreeDelivery = FREE_DELIVERY_THRESHOLD - cartTotal
-  const finalTotal = cartTotal + deliveryCost
+  // Submitting state
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const canSubmit = cart.length > 0 && name.trim() && address.trim() && agreement
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!canSubmit) return
-    const summary = cart
-      .map((i) => `• ${i.name} × ${i.quantity} — ${i.price * i.quantity} ₽`)
-      .join("\n")
-    createOrder({ method, customerName: name.trim(), contact: contact.trim() || "-", comment: comment.trim() })
-    if (method === "telegram") {
-      const deliveryName =
-        deliveryMethod === "cdek"
-          ? "СДЭК (Москва и МО)"
-          : deliveryMethod === "yandex"
-          ? "Яндекс.Доставка"
-          : deliveryMethod === "cdek_regions"
-          ? "СДЭК (Регионы)"
-          : "Почта России"
-      const text = encodeURIComponent(
-        `Здравствуйте! Я хочу оформить заказ:\n\n${summary}\n\nСумма товаров: ${cartTotal} ₽\nДоставка (${deliveryName}): ${deliveryCost} ₽\nИтого к оплате: ${finalTotal} ₽\n\nМой адрес: ${address}\n\nС Пользовательским соглашением ознакомлен(а) и согласен(на).`
-      )
-      window.open(`https://t.me/${TELEGRAM_USERNAME}?text=${text}`, "_blank")
+  const fetchShippingQuotes = async () => {
+    if (!city.trim()) {
+      setShippingError("Укажите город для расчёта доставки")
+      return
     }
-    setDone(true)
+
+    setIsCalculatingShipping(true)
+    setShippingError(null)
+
+    try {
+      const res = await fetch("/api/shipping/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipient: {
+            city: city.trim(),
+            address: address.trim(),
+            postalCode: postalCode.trim(),
+          },
+          items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || "Не удалось рассчитать варианты доставки")
+      }
+
+      setQuotes(data.quotes || [])
+      if (data.quotes && data.quotes.length > 0) {
+        setSelectedQuote(data.quotes[0])
+      }
+    } catch (err: any) {
+      setShippingError(err.message || " Ошибка соединения при расчёте доставки")
+    } finally {
+      setIsCalculatingShipping(false)
+    }
   }
 
-  if (done) {
+  const deliveryPrice = selectedQuote?.price || 0
+  const estimatedTotal = cartTotal + deliveryPrice
+  const canSubmit =
+    cart.length > 0 &&
+    name.trim().length >= 2 &&
+    contact.trim().length >= 3 &&
+    address.trim().length >= 5 &&
+    selectedQuote !== null &&
+    termsAgreement &&
+    privacyAgreement &&
+    !isSubmitting
+
+  const handleSubmitOrder = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!canSubmit || !selectedQuote) return
+
+    setIsSubmitting(true)
+    setSubmitError(null)
+
+    try {
+      const res = await fetch("/api/orders/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: name.trim(),
+          contact: contact.trim(),
+          address: `${city.trim()}, ${address.trim()} ${postalCode.trim() ? `(${postalCode.trim()})` : ""}`,
+          comment: comment.trim(),
+          items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+          deliveryProviderId: selectedQuote.providerId,
+          deliveryProviderName: selectedQuote.providerName,
+          deliveryServiceCode: selectedQuote.serviceCode,
+          deliveryServiceName: selectedQuote.serviceName,
+          deliveryPrice: selectedQuote.price,
+          deliveryMinDays: selectedQuote.minDays,
+          deliveryMaxDays: selectedQuote.maxDays,
+          userId: currentUser?.id,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || "Не удалось создать заявку")
+      }
+
+      clearCart()
+      router.push(`/orders/${data.publicNumber || data.orderId}?token=${data.accessToken}`)
+    } catch (err: any) {
+      setSubmitError(err.message || "Ошибка отправки заявки. Попробуйте еще раз.")
+      setIsSubmitting(false)
+    }
+  }
+
+  if (cart.length === 0) {
     return (
       <StoreShell>
-        <div className="mx-auto flex max-w-md flex-col items-center px-4 py-24 text-center sm:px-6">
-          <div className="animate-scale-in inline-flex size-16 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Check className="size-8" />
+        <div className="mx-auto max-w-md px-4 py-24 text-center">
+          <div className="inline-flex size-14 items-center justify-center rounded-full bg-muted mb-4">
+            <ShoppingBag className="size-6 text-muted-foreground" />
           </div>
-          <h1 className="mt-6 font-serif text-3xl text-foreground">{t("checkout.success")}</h1>
-          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            {t("checkout.successHint")}
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            {currentUser ? (
-              <Button asChild size="lg" className="h-11">
-                <Link href="/account">{t("checkout.toAccount")}</Link>
-              </Button>
-            ) : null}
-            <Button asChild variant="outline" size="lg" className="h-11">
-              <Link href="/">{t("checkout.toHome")}</Link>
-            </Button>
-          </div>
+          <h1 className="font-serif text-2xl text-foreground">Ваша корзина пуста</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Выберите товары из нашего каталога для оформления заявки.</p>
+          <Button asChild className="mt-6">
+            <Link href="/#catalog">Перейти в каталог</Link>
+          </Button>
         </div>
       </StoreShell>
     )
@@ -92,199 +148,287 @@ export default function CheckoutPage() {
 
   return (
     <StoreShell>
-      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:py-16">
+      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:py-16">
         <button
           type="button"
           onClick={() => router.back()}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground mb-6"
         >
           <ArrowLeft className="size-4" />
-          {t("cart.continue")}
+          Назад в магазин
         </button>
-        <h1 className="mt-4 font-serif text-3xl text-foreground sm:text-4xl">
-          {t("checkout.title")}
+
+        <h1 className="font-serif text-3xl font-medium text-foreground sm:text-4xl">
+          Оформление заявки на заказ
         </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Без онлайн-оплаты. Все детали, точные сроки и способы оплаты подтверждаются в Telegram.
+        </p>
 
-        {cart.length === 0 ? (
-          <div className="mt-10 flex flex-col items-center gap-3 rounded-2xl border border-border bg-card py-16 text-center">
-            <div className="inline-flex size-14 items-center justify-center rounded-full bg-muted">
-              <ShoppingBag className="size-6 text-muted-foreground" />
-            </div>
-            <p className="font-serif text-lg text-foreground">{t("cart.empty")}</p>
-            <Button asChild variant="outline" className="mt-2">
-              <Link href="/#catalog">{t("catalog.title")}</Link>
-            </Button>
-          </div>
-        ) : (
-          <div className="mt-8 grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
-            <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-              <fieldset>
-                <legend className="text-sm font-medium text-foreground">
-                  {t("checkout.method")}
-                </legend>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  {(
-                    [
-                      { key: "account", title: "checkout.viaAccount", hint: "checkout.viaAccountHint" },
-                      { key: "telegram", title: "checkout.viaTelegram", hint: "checkout.viaTelegramHint" },
-                    ] as const
-                  ).map((m) => (
-                    <button
-                      type="button"
-                      key={m.key}
-                      onClick={() => setMethod(m.key)}
-                      className={cn(
-                        "rounded-xl border p-4 text-left transition-all",
-                        method === m.key
-                          ? "border-foreground bg-secondary/60 ring-1 ring-foreground"
-                          : "border-border bg-card hover:border-foreground/40",
-                      )}
-                    >
-                      <span className="flex items-center justify-between">
-                        <span className="font-medium text-foreground">{t(m.title)}</span>
-                        <span
-                          className={cn(
-                            "inline-flex size-4 items-center justify-center rounded-full border",
-                            method === m.key ? "border-foreground bg-foreground" : "border-border",
-                          )}
-                        >
-                          {method === m.key ? (
-                            <Check className="size-3 text-background" />
-                          ) : null}
-                        </span>
-                      </span>
-                      <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
-                        {t(m.hint)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-
-              <div className="flex flex-col gap-4">
+        <div className="mt-8 grid gap-10 lg:grid-cols-[1.2fr_0.8fr]">
+          {/* Main Checkout Form */}
+          <form onSubmit={handleSubmitOrder} className="space-y-8">
+            {/* Step 1: Contact info */}
+            <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
+              <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
+                1. Контактные данные
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-foreground">{t("checkout.name")}</span>
+                  <span className="text-xs font-medium text-foreground">Ваше имя *</span>
                   <input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
-                    className="h-11 rounded-lg border border-border bg-card px-3.5 text-sm outline-none transition-colors focus:border-foreground focus:ring-1 focus:ring-foreground"
+                    placeholder="Александр"
+                    className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
                   />
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-foreground">{t("checkout.address")}</span>
+                  <span className="text-xs font-medium text-foreground">Телефон или Telegram *</span>
+                  <input
+                    value={contact}
+                    onChange={(e) => setContact(e.target.value)}
+                    required
+                    placeholder="+7 (900) 000-00-00 или @username"
+                    className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
+                  />
+                </label>
+              </div>
+            </section>
+
+            {/* Step 2: Shipping Address & Calculation */}
+            <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
+              <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
+                2. Адрес и Расчёт доставки
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-foreground">Город *</span>
+                  <input
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    required
+                    placeholder="Екатеринбург"
+                    className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 sm:col-span-2">
+                  <span className="text-xs font-medium text-foreground">Улица, дом, квартира *</span>
                   <input
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     required
-                    placeholder="Город, улица, дом, индекс"
-                    className="h-11 rounded-lg border border-border bg-card px-3.5 text-sm outline-none transition-colors focus:border-foreground focus:ring-1 focus:ring-foreground"
+                    placeholder="ул. Малышева, д. 10, кв. 4"
+                    className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
                   />
                 </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-foreground">Служба доставки</span>
-                  <select
-                    value={deliveryMethod}
-                    onChange={(e) => setDeliveryMethod(e.target.value)}
-                    className="h-11 rounded-lg border border-border bg-card px-3.5 text-sm outline-none transition-colors focus:border-foreground focus:ring-1 focus:ring-foreground"
-                  >
-                    <option value="cdek">СДЭК (Москва и МО)</option>
-                    <option value="yandex">Яндекс.Доставка (Москва и МО)</option>
-                    <option value="cdek_regions">СДЭК (Регионы РФ)</option>
-                    <option value="post">Почта России (Регионы РФ)</option>
-                  </select>
-                </label>
-                <label className="flex items-center gap-3 py-2 cursor-pointer">
+                  <span className="text-xs font-medium text-foreground">Индекс</span>
                   <input
-                    type="checkbox"
-                    checked={agreement}
-                    onChange={(e) => setAgreement(e.target.checked)}
-                    required
-                    className="size-5 rounded border-border accent-foreground cursor-pointer shrink-0"
+                    value={postalCode}
+                    onChange={(e) => setPostalCode(e.target.value)}
+                    placeholder="620000"
+                    className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
                   />
-                  <span className="text-sm text-foreground">
-                    Я соглашаюсь с{" "}
-                    <Link href="/terms" target="_blank" className="underline underline-offset-4 hover:text-muted-foreground">
-                      пользовательским соглашением
-                    </Link>
-                    , правилами доставки и возврата
-                  </span>
                 </label>
-              </div>
-
-              <Button type="submit" size="lg" disabled={!canSubmit} className="h-11">
-                {method === "telegram" ? (
-                  <>
-                    <Send className="size-4" />
-                    {t("checkout.openTelegram")}
-                  </>
-                ) : (
-                  t("checkout.submit")
-                )}
-              </Button>
-            </form>
-
-            <aside className="h-fit rounded-2xl border border-border bg-card p-5 lg:sticky lg:top-24">
-              <h2 className="font-serif text-lg text-foreground">{t("checkout.summary")}</h2>
-              <ul className="mt-4 flex flex-col gap-3">
-                {cart.map((i) => (
-                  <li key={i.productId} className="flex items-center gap-3">
-                    <div className="relative size-14 shrink-0 overflow-hidden rounded-lg border border-border">
-                      <Image
-                        src={i.image || "/placeholder.svg"}
-                        alt={i.name}
-                        fill
-                        sizes="56px"
-                        className="object-cover"
-                      />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-foreground">{i.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {i.quantity} × {formatPrice(i.price)}
-                      </p>
-                    </div>
-                    <p className="text-sm font-medium text-foreground">
-                      {formatPrice(i.price * i.quantity)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Товары</span>
-                  <span className="font-medium text-foreground">{formatPrice(cartTotal)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Доставка</span>
-                  <span className="font-medium text-foreground">
-                    {deliveryCost === 0 ? "Бесплатно" : formatPrice(deliveryCost)}
-                  </span>
-                </div>
-                <div className="mt-2 flex items-center justify-between border-t border-border pt-3">
-                  <span className="text-sm font-medium text-foreground">{t("cart.total")}</span>
-                  <span className="font-serif text-xl text-foreground">
-                    {formatPrice(finalTotal)}
-                  </span>
-                </div>
-              </div>
-
-              {isMoscowRegion && needsDeliveryFee && (
-                <div className="mt-6 rounded-xl border border-primary/20 bg-primary/5 p-4 text-center">
-                  <p className="text-sm font-medium text-primary">
-                    До бесплатной доставки по Москве и МО осталось {formatPrice(remainingForFreeDelivery)}!
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Добавьте еще что-нибудь в корзину, чтобы сэкономить {formatPrice(DELIVERY_FEE)} на доставке.
-                  </p>
-                  <Button asChild variant="link" className="mt-2 h-auto p-0 text-xs">
-                    <Link href="/#catalog">Вернуться в каталог &rarr;</Link>
+                <div className="sm:col-span-2 flex items-end">
+                  <Button
+                    type="button"
+                    onClick={fetchShippingQuotes}
+                    disabled={isCalculatingShipping || !city.trim()}
+                    variant="outline"
+                    className="w-full h-11 gap-2 text-xs font-medium rounded-xl"
+                  >
+                    {isCalculatingShipping ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Запрос тарифов API...
+                      </>
+                    ) : (
+                      <>
+                        <Truck className="size-4" />
+                        Рассчитать стоимость доставки
+                      </>
+                    )}
                   </Button>
                 </div>
+              </div>
+
+              {shippingError && (
+                <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
+                  {shippingError}
+                </div>
               )}
-            </aside>
-          </div>
-        )}
+
+              {/* Quotes Selection List */}
+              {quotes.length > 0 && (
+                <div className="space-y-3 pt-4 border-t border-border">
+                  <span className="text-xs font-medium text-foreground block">Доступные варианты доставки:</span>
+                  <div className="grid gap-3">
+                    {quotes.map((q) => (
+                      <button
+                        type="button"
+                        key={q.quoteId}
+                        onClick={() => setSelectedQuote(q)}
+                        className={`flex items-center justify-between rounded-xl border p-4 text-left transition-all ${
+                          selectedQuote?.quoteId === q.quoteId
+                            ? "border-foreground bg-secondary/60 ring-1 ring-foreground"
+                            : "border-border bg-background hover:border-foreground/40"
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm text-foreground">{q.providerName}</span>
+                            <span className="text-[10px] uppercase tracking-wider rounded-md bg-muted px-2 py-0.5 font-semibold text-muted-foreground">
+                              {q.deliveryType === "courier" ? "Курьер" : q.deliveryType === "pickup" ? "ПВЗ" : "Почта"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{q.serviceName}</p>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="font-semibold text-sm text-foreground">
+                            {q.price > 0 ? `${formatPrice(q.price)}` : "По согласованию"}
+                          </span>
+                          <p className="text-[10px] text-muted-foreground">{q.minDays}-{q.maxDays} дн.</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Step 3: Comment & Consent */}
+            <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
+              <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
+                3. Согласование и Подтверждение
+              </h2>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-foreground">Комментарий к заказу</span>
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  rows={2}
+                  placeholder="Пожелания по цвету, упаковке или времени связи"
+                  className="rounded-xl border border-border bg-background p-3 text-sm outline-none transition-colors focus:border-foreground"
+                />
+              </label>
+
+              <div className="space-y-3 pt-2">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={termsAgreement}
+                    onChange={(e) => setTermsAgreement(e.target.checked)}
+                    required
+                    className="size-4 rounded border-border accent-foreground cursor-pointer mt-0.5 shrink-0"
+                  />
+                  <span className="text-xs text-foreground">
+                    Я ознакомлен(а) и согласен(на) с{" "}
+                    <Link href="/terms" target="_blank" className="underline underline-offset-4 hover:text-muted-foreground">
+                      Пользовательским соглашением
+                    </Link>{" "}
+                    и условиями возврата.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={privacyAgreement}
+                    onChange={(e) => setPrivacyAgreement(e.target.checked)}
+                    required
+                    className="size-4 rounded border-border accent-foreground cursor-pointer mt-0.5 shrink-0"
+                  />
+                  <span className="text-xs text-foreground">
+                    Я даю согласие на обработку персональных данных для связи по заказу.
+                  </span>
+                </label>
+              </div>
+
+              {submitError && (
+                <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
+                  {submitError}
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                size="lg"
+                disabled={!canSubmit}
+                className="w-full h-12 gap-2 text-sm font-medium rounded-xl mt-4"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Сохранение заявки...
+                  </>
+                ) : (
+                  <>
+                    <Send className="size-4" />
+                    Отправить заявку в ONDE Studio
+                  </>
+                )}
+              </Button>
+            </section>
+          </form>
+
+          {/* Right Summary Sidebar */}
+          <aside className="h-fit rounded-2xl border border-border bg-card p-6 lg:sticky lg:top-24 space-y-6">
+            <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
+              Ваш заказ
+            </h2>
+
+            <ul className="divide-y divide-border">
+              {cart.map((item) => (
+                <li key={item.productId} className="flex items-center gap-3 py-3">
+                  <div className="relative size-14 shrink-0 overflow-hidden rounded-xl border border-border bg-muted">
+                    <Image src={item.image || "/placeholder.svg"} alt={item.name} fill className="object-cover" />
+                  </div>
+                  <div className="min-w-0 flex-1 text-xs">
+                    <p className="truncate font-medium text-foreground">{item.name}</p>
+                    <p className="text-muted-foreground mt-0.5">
+                      {item.quantity} × {formatPrice(item.price)}
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold text-foreground">
+                    {formatPrice(item.price * item.quantity)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="space-y-2 border-t border-border pt-4 text-xs">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Товары ({cart.length})</span>
+                <span className="font-medium text-foreground">{formatPrice(cartTotal)}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Доставка</span>
+                <span className="font-medium text-foreground">
+                  {selectedQuote ? (deliveryPrice > 0 ? formatPrice(deliveryPrice) : "По согласованию") : "Укажите адрес"}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm font-semibold text-foreground pt-3 border-t border-border">
+                <span>Итого к заявке</span>
+                <span className="font-serif text-base">{formatPrice(estimatedTotal)}</span>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-secondary/50 p-4 text-[11px] leading-relaxed text-muted-foreground flex items-start gap-2">
+              <ShieldCheck className="size-4 shrink-0 text-foreground/70 mt-0.5" />
+              <span>
+                Оплата совершается после подтверждения наличия, точного цвета и сроков изготовления в Telegram.
+              </span>
+            </div>
+          </aside>
+        </div>
       </div>
     </StoreShell>
   )

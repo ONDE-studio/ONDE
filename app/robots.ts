@@ -1,14 +1,13 @@
-import { MetadataRoute } from 'next'
+import { MetadataRoute } from "next"
 
 export default function robots(): MetadataRoute.Robots {
-  // Замените на ваш настоящий домен, когда купите его (например, https://onde-studio.ru)
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://onde-studio.vercel.app'
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://onde-studio.ru"
 
   return {
     rules: {
-      userAgent: '*',
-      allow: '/',
-      disallow: ['/admin', '/account'], // Запрещаем индексировать админку и личный кабинет
+      userAgent: "*",
+      allow: "/",
+      disallow: ["/admin", "/account", "/checkout", "/orders", "/login"],
     },
     sitemap: `${baseUrl}/sitemap.xml`,
   }

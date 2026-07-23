@@ -24,8 +24,8 @@ interface StoreValue {
   cartCount: number
   cartTotal: number
   // auth
-  login: (email: string, password: string) => { ok: boolean; error?: string }
-  register: (name: string, email: string, password: string) => { ok: boolean; error?: string }
+  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>
+  register: (name: string, email: string, password: string) => Promise<{ ok: boolean; error?: string }>
   logout: () => void
   // orders
   createOrder: (input: {
