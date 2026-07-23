@@ -10,12 +10,12 @@ export function Logo({
 }) {
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
-      <div className="relative size-8 shrink-0 overflow-hidden rounded-lg border border-border bg-white shadow-xs">
+      <div className="relative size-8 shrink-0">
         <Image
           src="/logo.png"
           alt="ONDE Studio"
           fill
-          className="object-cover"
+          className="object-contain"
           priority
         />
       </div>
