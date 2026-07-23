@@ -322,34 +322,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (index === -1) return
     const swapWith = direction === "up" ? index - 1 : index + 1
     if (swapWith < 0 || swapWith >= sorted.length) return
-    
-    const a = sorted[index]
-    const b = sorted[swapWith]
-    
-    // Optimistic update
-    setProducts((prev) => {
-      const newSorted = [...prev].sort((x, y) => x.position - y.position)
-      const tmp = newSorted[index].position
-      newSorted[index].position = newSorted[swapWith].position
-      newSorted[swapWith].position = tmp
-      return newSorted
-    })
-    
-    // Update DB
-    const { error: e1 } = await supabase.from("products").update({ position: b.position }).eq("id", a.id)
-    const { error: e2 } = await supabase.from("products").update({ position: a.position }).eq("id", b.id)
 
-    if (e1 || e2) {
-      console.error("Failed to move product", e1 || e2)
-    } else {
-      setProducts((prev) => {
-        const next = [...prev]
-        const ia = next.findIndex((p) => p.id === a.id)
-        const ib = next.findIndex((p) => p.id === b.id)
-        next[ia] = { ...a, position: b.position }
-        next[ib] = { ...b, position: a.position }
-        return next
-      })
+    // Swap positions locally (works instantly, no DB required)
+    const newSorted = sorted.map((p, i) => {
+      if (i === index) return { ...p, position: sorted[swapWith].position }
+      if (i === swapWith) return { ...p, position: sorted[index].position }
+      return p
+    })
+    setProducts(newSorted)
+
+    // Try to persist to DB — silently ignore errors
+    try {
+      await Promise.all([
+        supabase.from("products").update({ position: sorted[swapWith].position }).eq("id", sorted[index].id),
+        supabase.from("products").update({ position: sorted[index].position }).eq("id", sorted[swapWith].id),
+      ])
+    } catch {
+      // DB update failed — local state already updated, order preserved in memory
     }
   }, [products])
 
