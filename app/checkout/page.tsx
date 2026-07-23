@@ -4,127 +4,92 @@ import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Check, Loader2, Send, ShieldCheck, ShoppingBag, Truck } from "lucide-react"
+import { ArrowLeft, Check, ChevronRight, MessageCircle, Package, Send, ShieldCheck, ShoppingBag, Truck } from "lucide-react"
 import { StoreShell } from "@/components/store-shell"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/lib/i18n"
 import { useStore } from "@/lib/store"
-import { ShippingQuote } from "@/lib/shipping/types"
+
+const TELEGRAM_USERNAME = "onde_studio"
+
+const DELIVERY_OPTIONS = [
+  { id: "cdek", label: "СДЭК", sub: "ПВЗ или курьер по всей России" },
+  { id: "yandex", label: "Яндекс Доставка", sub: "Курьером или до ПВЗ" },
+  { id: "pochta", label: "Почта России", sub: "До отделения или курьером" },
+  { id: "ozon", label: "Ozon / Авито Доставка", sub: "До ПВЗ или пункта выдачи" },
+  { id: "custom", label: "Другая служба / Самовывоз", sub: "Обсудим в Telegram" },
+]
+
+const PAYMENT_OPTIONS = [
+  { id: "card", label: "Банковская карта", sub: "По реквизитам или QR" },
+  { id: "sbp", label: "СБП (Система быстрых платежей)", sub: "Перевод по номеру телефона" },
+  { id: "cash", label: "Наличные", sub: "При самовывозе или курьеру" },
+  { id: "crypto", label: "Крипто / другое", sub: "Уточним в Telegram" },
+]
+
+type Step = "form" | "confirm" | "send"
 
 export default function CheckoutPage() {
-  const { t, formatPrice } = useI18n()
+  const { formatPrice } = useI18n()
   const { cart, cartTotal, currentUser, clearCart } = useStore()
   const router = useRouter()
 
+  const [step, setStep] = useState<Step>("form")
+
+  // Form fields
   const [name, setName] = useState(currentUser?.name ?? "")
   const [contact, setContact] = useState(currentUser?.email ?? "")
-  const [city, setCity] = useState("Екатеринбург")
+  const [city, setCity] = useState("")
   const [address, setAddress] = useState("")
+  const [delivery, setDelivery] = useState("")
+  const [payment, setPayment] = useState("")
   const [comment, setComment] = useState("")
-  const [termsAgreement, setTermsAgreement] = useState(false)
-  const [privacyAgreement, setPrivacyAgreement] = useState(false)
 
-  // Quotes state
-  const [quotes, setQuotes] = useState<ShippingQuote[]>([])
-  const [selectedQuote, setSelectedQuote] = useState<ShippingQuote | null>(null)
-  const [isCalculatingShipping, setIsCalculatingShipping] = useState(false)
-  const [shippingError, setShippingError] = useState<string | null>(null)
-
-  // Submitting state
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
-
-  const fetchShippingQuotes = async () => {
-    if (!city.trim()) {
-      setShippingError("Укажите город для расчёта доставки")
-      return
-    }
-
-    setIsCalculatingShipping(true)
-    setShippingError(null)
-
-    try {
-      const res = await fetch("/api/shipping/quote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipient: {
-            city: city.trim(),
-            address: address.trim(),
-          },
-          items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-        }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || "Не удалось рассчитать варианты доставки")
-      }
-
-      setQuotes(data.quotes || [])
-      if (data.quotes && data.quotes.length > 0) {
-        setSelectedQuote(data.quotes[0])
-      }
-    } catch (err: any) {
-      setShippingError(err.message || " Ошибка соединения при расчёте доставки")
-    } finally {
-      setIsCalculatingShipping(false)
-    }
-  }
-
-  const deliveryPrice = selectedQuote?.price || 0
-  const estimatedTotal = cartTotal + deliveryPrice
-  const canSubmit =
-    cart.length > 0 &&
+  const canConfirm =
     name.trim().length >= 2 &&
     contact.trim().length >= 3 &&
-    address.trim().length >= 5 &&
-    selectedQuote !== null &&
-    termsAgreement &&
-    privacyAgreement &&
-    !isSubmitting
+    city.trim().length >= 2 &&
+    address.trim().length >= 3 &&
+    delivery !== ""
 
-  const handleSubmitOrder = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!canSubmit || !selectedQuote) return
+  const canSend = canConfirm && payment !== ""
 
-    setIsSubmitting(true)
-    setSubmitError(null)
+  function buildTelegramMessage() {
+    const itemLines = cart
+      .map((i) => `• ${i.name} × ${i.quantity} — ${formatPrice(i.price * i.quantity)}`)
+      .join("\n")
 
-    try {
-      const res = await fetch("/api/orders/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerName: name.trim(),
-          contact: contact.trim(),
-          address: `${city.trim()}, ${address.trim()}`,
-          comment: comment.trim(),
-          items: cart.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-          deliveryProviderId: selectedQuote.providerId,
-          deliveryProviderName: selectedQuote.providerName,
-          deliveryServiceCode: selectedQuote.serviceCode,
-          deliveryServiceName: selectedQuote.serviceName,
-          deliveryPrice: selectedQuote.price,
-          deliveryMinDays: selectedQuote.minDays,
-          deliveryMaxDays: selectedQuote.maxDays,
-          userId: currentUser?.id,
-        }),
-      })
+    const deliveryLabel = DELIVERY_OPTIONS.find((d) => d.id === delivery)?.label ?? delivery
+    const paymentLabel = PAYMENT_OPTIONS.find((p) => p.id === payment)?.label ?? payment
 
-      const data = await res.json()
+    const lines = [
+      "🛍 Новая заявка с сайта ONDE Studio",
+      "",
+      `👤 Имя: ${name.trim()}`,
+      `📞 Контакт: ${contact.trim()}`,
+      `📍 Адрес: ${city.trim()}, ${address.trim()}`,
+      `🚚 Доставка: ${deliveryLabel}`,
+      `💳 Оплата: ${paymentLabel}`,
+      "",
+      "📦 Состав заказа:",
+      itemLines,
+      "",
+      `💰 Итого (без доставки): ${formatPrice(cartTotal)}`,
+      comment.trim() ? `\n💬 Комментарий: ${comment.trim()}` : "",
+    ]
+      .filter((l) => l !== undefined)
+      .join("\n")
 
-      if (!res.ok) {
-        throw new Error(data.error || "Не удалось создать заявку")
-      }
+    return lines
+  }
 
-      clearCart()
-      router.push(`/orders/${data.publicNumber || data.orderId}?token=${data.accessToken}`)
-    } catch (err: any) {
-      setSubmitError(err.message || "Ошибка отправки заявки. Попробуйте еще раз.")
-      setIsSubmitting(false)
-    }
+  function handleSendToTelegram() {
+    const msg = buildTelegramMessage()
+    const encoded = encodeURIComponent(msg)
+    const url = `https://t.me/${TELEGRAM_USERNAME}?text=${encoded}`
+    clearCart()
+    window.open(url, "_blank", "noopener,noreferrer")
+    router.push("/")
   }
 
   if (cart.length === 0) {
@@ -149,228 +114,252 @@ export default function CheckoutPage() {
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:py-16">
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() => step === "form" ? router.back() : setStep("form")}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground mb-6"
         >
           <ArrowLeft className="size-4" />
-          Назад в магазин
+          {step === "form" ? "Назад в магазин" : "Изменить данные"}
         </button>
 
         <h1 className="font-serif text-3xl font-medium text-foreground sm:text-4xl">
-          Оформление заявки на заказ
+          Оформление заявки
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Без онлайн-оплаты. Все детали, точные сроки и способы оплаты подтверждаются в Telegram.
+          Без онлайн-оплаты. Все детали и способы оплаты согласовываются в Telegram.
         </p>
 
+        {/* Progress steps */}
+        <div className="mt-6 flex items-center gap-2 text-xs font-medium">
+          {(["form", "confirm", "send"] as Step[]).map((s, i) => {
+            const labels = ["Данные", "Подтверждение", "Отправить"]
+            const active = step === s
+            const done =
+              (s === "form" && (step === "confirm" || step === "send")) ||
+              (s === "confirm" && step === "send")
+            return (
+              <div key={s} className="flex items-center gap-2">
+                <div
+                  className={`flex size-6 items-center justify-center rounded-full text-[10px] font-bold transition-colors ${
+                    done
+                      ? "bg-foreground text-background"
+                      : active
+                      ? "bg-foreground text-background ring-2 ring-foreground ring-offset-2"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {done ? <Check className="size-3" /> : i + 1}
+                </div>
+                <span className={active ? "text-foreground" : "text-muted-foreground"}>{labels[i]}</span>
+                {i < 2 && <ChevronRight className="size-3 text-muted-foreground" />}
+              </div>
+            )
+          })}
+        </div>
+
         <div className="mt-8 grid gap-10 lg:grid-cols-[1.2fr_0.8fr]">
-          {/* Main Checkout Form */}
-          <form onSubmit={handleSubmitOrder} className="space-y-8">
-            {/* Step 1: Contact info */}
-            <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
-              <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
-                1. Контактные данные
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-foreground">Ваше имя *</span>
-                  <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    placeholder="Александр"
-                    className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
-                  />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-foreground">Телефон или Telegram *</span>
-                  <input
-                    value={contact}
-                    onChange={(e) => setContact(e.target.value)}
-                    required
-                    placeholder="+7 (900) 000-00-00 или @username"
-                    className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
-                  />
-                </label>
-              </div>
-            </section>
-
-            {/* Step 2: Shipping Address & Calculation */}
-            <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
-              <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
-                2. Адрес и Расчёт доставки
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-foreground">Город *</span>
-                  <input
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    required
-                    placeholder="Екатеринбург"
-                    className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
-                  />
-                </label>
-                <label className="flex flex-col gap-1.5 sm:col-span-2">
-                  <span className="text-xs font-medium text-foreground">Улица, дом, квартира *</span>
-                  <input
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    required
-                    placeholder="ул. Малышева, д. 10, кв. 4"
-                    className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
-                  />
-                </label>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-1">
-                <div className="flex items-end">
-                  <Button
-                    type="button"
-                    onClick={fetchShippingQuotes}
-                    disabled={isCalculatingShipping || !city.trim()}
-                    variant="outline"
-                    className="w-full h-11 gap-2 text-xs font-medium rounded-xl"
-                  >
-                    {isCalculatingShipping ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        Запрос тарифов API...
-                      </>
-                    ) : (
-                      <>
-                        <Truck className="size-4" />
-                        Рассчитать стоимость доставки
-                      </>
-                    )}
-                  </Button>
+          {/* ─── STEP 1: Form ─── */}
+          {step === "form" && (
+            <div className="space-y-6">
+              {/* Contact */}
+              <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
+                <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
+                  1. Контактные данные
+                </h2>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium text-foreground">Ваше имя *</span>
+                    <input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Александр"
+                      className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium text-foreground">Телефон или Telegram *</span>
+                    <input
+                      value={contact}
+                      onChange={(e) => setContact(e.target.value)}
+                      placeholder="+7 (900) 000-00-00 или @username"
+                      className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
+                    />
+                  </label>
                 </div>
-              </div>
+              </section>
 
-              {shippingError && (
-                <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
-                  {shippingError}
+              {/* Address */}
+              <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
+                <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
+                  2. Адрес доставки
+                </h2>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium text-foreground">Город *</span>
+                    <input
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      placeholder="Москва"
+                      className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 sm:col-span-2">
+                    <span className="text-xs font-medium text-foreground">Улица, дом, квартира *</span>
+                    <input
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      placeholder="ул. Малышева, д. 10, кв. 4"
+                      className="h-11 rounded-xl border border-border bg-background px-3.5 text-sm outline-none transition-colors focus:border-foreground"
+                    />
+                  </label>
                 </div>
-              )}
+              </section>
 
-              {/* Quotes Selection List */}
-              {quotes.length > 0 && (
-                <div className="space-y-3 pt-4 border-t border-border">
-                  <span className="text-xs font-medium text-foreground block">Доступные варианты доставки:</span>
-                  <div className="grid gap-3">
-                    {quotes.map((q) => (
-                      <button
-                        type="button"
-                        key={q.quoteId}
-                        onClick={() => setSelectedQuote(q)}
-                        className={`flex items-center justify-between rounded-xl border p-4 text-left transition-all ${
-                          selectedQuote?.quoteId === q.quoteId
-                            ? "border-foreground bg-secondary/60 ring-1 ring-foreground"
-                            : "border-border bg-background hover:border-foreground/40"
-                        }`}
-                      >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm text-foreground">{q.providerName}</span>
-                            <span className="text-[10px] uppercase tracking-wider rounded-md bg-muted px-2 py-0.5 font-semibold text-muted-foreground">
-                              {q.deliveryType === "courier" ? "Курьер" : q.deliveryType === "pickup" ? "ПВЗ" : "Почта"}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">{q.serviceName}</p>
+              {/* Delivery */}
+              <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
+                <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
+                  3. Способ доставки
+                </h2>
+                <div className="grid gap-2">
+                  {DELIVERY_OPTIONS.map((opt) => (
+                    <button
+                      type="button"
+                      key={opt.id}
+                      onClick={() => setDelivery(opt.id)}
+                      className={`flex items-center justify-between rounded-xl border p-4 text-left transition-all ${
+                        delivery === opt.id
+                          ? "border-foreground bg-secondary/60 ring-1 ring-foreground"
+                          : "border-border bg-background hover:border-foreground/40"
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Truck className="size-4 text-muted-foreground" />
+                          <span className="font-medium text-sm text-foreground">{opt.label}</span>
                         </div>
-
-                        <div className="text-right">
-                          <span className="font-semibold text-sm text-foreground">
-                            {q.price !== null && q.price > 0 ? formatPrice(q.price) : "По согласованию"}
-                          </span>
-                          <p className="text-[10px] text-muted-foreground">
-                            {q.minDays !== null && q.maxDays !== null ? `${q.minDays}–${q.maxDays} дн.` : "Срок уточняется"}
-                          </p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 pl-6">{opt.sub}</p>
+                      </div>
+                      {delivery === opt.id && (
+                        <Check className="size-4 text-foreground shrink-0" />
+                      )}
+                    </button>
+                  ))}
                 </div>
-              )}
-            </section>
+              </section>
 
-            {/* Step 3: Comment & Consent */}
-            <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
-              <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
-                3. Согласование и Подтверждение
-              </h2>
-
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-foreground">Комментарий к заказу</span>
+              {/* Comment */}
+              <section className="rounded-2xl border border-border bg-card p-6 space-y-3">
+                <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
+                  4. Комментарий (необязательно)
+                </h2>
                 <textarea
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   rows={2}
                   placeholder="Пожелания по цвету, упаковке или времени связи"
-                  className="rounded-xl border border-border bg-background p-3 text-sm outline-none transition-colors focus:border-foreground"
+                  className="w-full rounded-xl border border-border bg-background p-3 text-sm outline-none transition-colors focus:border-foreground"
                 />
-              </label>
-
-              <div className="space-y-3 pt-2">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={termsAgreement}
-                    onChange={(e) => setTermsAgreement(e.target.checked)}
-                    required
-                    className="size-4 rounded border-border accent-foreground cursor-pointer mt-0.5 shrink-0"
-                  />
-                  <span className="text-xs text-foreground">
-                    Я ознакомлен(а) и согласен(на) с{" "}
-                    <Link href="/terms" target="_blank" className="underline underline-offset-4 hover:text-muted-foreground">
-                      Пользовательским соглашением
-                    </Link>{" "}
-                    и условиями возврата.
-                  </span>
-                </label>
-
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={privacyAgreement}
-                    onChange={(e) => setPrivacyAgreement(e.target.checked)}
-                    required
-                    className="size-4 rounded border-border accent-foreground cursor-pointer mt-0.5 shrink-0"
-                  />
-                  <span className="text-xs text-foreground">
-                    Я даю согласие на обработку персональных данных для связи по заказу.
-                  </span>
-                </label>
-              </div>
-
-              {submitError && (
-                <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
-                  {submitError}
-                </div>
-              )}
+              </section>
 
               <Button
-                type="submit"
+                type="button"
                 size="lg"
-                disabled={!canSubmit}
-                className="w-full h-12 gap-2 text-sm font-medium rounded-xl mt-4"
+                disabled={!canConfirm}
+                onClick={() => setStep("confirm")}
+                className="w-full h-12 gap-2 text-sm font-medium rounded-xl"
               >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Сохранение заявки...
-                  </>
-                ) : (
-                  <>
-                    <Send className="size-4" />
-                    Отправить заявку в ONDE Studio
-                  </>
-                )}
+                Подтвердить данные
+                <ChevronRight className="size-4" />
               </Button>
-            </section>
-          </form>
+            </div>
+          )}
 
-          {/* Right Summary Sidebar */}
+          {/* ─── STEP 2: Confirm + Payment ─── */}
+          {step === "confirm" && (
+            <div className="space-y-6">
+              {/* Summary */}
+              <section className="rounded-2xl border border-border bg-card p-6 space-y-3">
+                <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
+                  Проверьте данные
+                </h2>
+                <div className="space-y-2 text-sm">
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground w-28 shrink-0">Имя</span>
+                    <span className="text-foreground font-medium">{name}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground w-28 shrink-0">Контакт</span>
+                    <span className="text-foreground font-medium">{contact}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground w-28 shrink-0">Адрес</span>
+                    <span className="text-foreground font-medium">{city}, {address}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground w-28 shrink-0">Доставка</span>
+                    <span className="text-foreground font-medium">
+                      {DELIVERY_OPTIONS.find((d) => d.id === delivery)?.label}
+                    </span>
+                  </div>
+                  {comment && (
+                    <div className="flex gap-2">
+                      <span className="text-muted-foreground w-28 shrink-0">Комментарий</span>
+                      <span className="text-foreground">{comment}</span>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* Payment selection */}
+              <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
+                <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
+                  Удобный способ оплаты
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Оплата происходит после подтверждения заказа в Telegram — не сейчас.
+                </p>
+                <div className="grid gap-2">
+                  {PAYMENT_OPTIONS.map((opt) => (
+                    <button
+                      type="button"
+                      key={opt.id}
+                      onClick={() => setPayment(opt.id)}
+                      className={`flex items-center justify-between rounded-xl border p-4 text-left transition-all ${
+                        payment === opt.id
+                          ? "border-foreground bg-secondary/60 ring-1 ring-foreground"
+                          : "border-border bg-background hover:border-foreground/40"
+                      }`}
+                    >
+                      <div>
+                        <span className="font-medium text-sm text-foreground">{opt.label}</span>
+                        <p className="text-xs text-muted-foreground mt-0.5">{opt.sub}</p>
+                      </div>
+                      {payment === opt.id && (
+                        <Check className="size-4 text-foreground shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <Button
+                type="button"
+                size="lg"
+                disabled={!canSend}
+                onClick={handleSendToTelegram}
+                className="w-full h-12 gap-2 text-sm font-medium rounded-xl bg-[#229ED9] hover:bg-[#1a8bbf] text-white"
+              >
+                <MessageCircle className="size-4" />
+                Отправить заявку в Telegram
+              </Button>
+
+              <p className="text-[11px] text-center text-muted-foreground leading-relaxed">
+                Нажав кнопку, вы перейдёте в Telegram с уже заполненным сообщением.
+                Просто нажмите «Отправить» в чате.
+              </p>
+            </div>
+          )}
+
+          {/* ─── Right sidebar ─── */}
           <aside className="h-fit rounded-2xl border border-border bg-card p-6 lg:sticky lg:top-24 space-y-6">
             <h2 className="font-serif text-lg font-medium text-foreground border-b border-border pb-3">
               Ваш заказ
@@ -402,13 +391,11 @@ export default function CheckoutPage() {
               </div>
               <div className="flex justify-between text-muted-foreground">
                 <span>Доставка</span>
-                <span className="font-medium text-foreground">
-                  {selectedQuote ? (deliveryPrice > 0 ? formatPrice(deliveryPrice) : "По согласованию") : "Укажите адрес"}
-                </span>
+                <span className="font-medium text-foreground">По согласованию</span>
               </div>
               <div className="flex justify-between text-sm font-semibold text-foreground pt-3 border-t border-border">
                 <span>Итого к заявке</span>
-                <span className="font-serif text-base">{formatPrice(estimatedTotal)}</span>
+                <span className="font-serif text-base">{formatPrice(cartTotal)}</span>
               </div>
             </div>
 
