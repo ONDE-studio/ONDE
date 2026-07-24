@@ -10,7 +10,7 @@ function getSupabaseClient() {
 
   // Use proxy in browser to bypass RKN blocking, use direct URL on server
   const isBrowser = typeof window !== "undefined"
-  const supabaseUrl = isBrowser ? "/api/supabase" : process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const supabaseUrl = isBrowser ? `${window.location.origin}/api/supabase` : process.env.NEXT_PUBLIC_SUPABASE_URL!
 
   client = createBrowserClient(
     supabaseUrl,
